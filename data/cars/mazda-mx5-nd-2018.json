@@ -1,0 +1,159 @@
+{
+  "schema": 1,
+  "id": "mazda-mx5-nd-2018",
+  "name": "Mazda MX-5 ND (2016-2018)",
+  "vehicle": {
+    "make": "Mazda",
+    "model": "MX-5",
+    "generation": "ND",
+    "yearFrom": 2016,
+    "yearTo": 2018,
+    "engine": "Skyactiv-G"
+  },
+  "source": "ЧЕРНОВИК. Блок OBD-II подтверждён стандартом SAE J1979. Блок broadcast CAN — кандидаты из сообщества NC/ND, поля verified=false, требуется подтверждение логированием на машине.",
+  "bus": {
+    "kind": "can2.0",
+    "bitrate": 500000,
+    "tap": "obd2",
+    "listenOnly": true
+  },
+  "signals": [
+    {
+      "id": "engine.rpm",
+      "name": "Обороты",
+      "unit": "rpm",
+      "min": 0,
+      "max": 8000,
+      "verified": false,
+      "src": { "type": "can", "canId": 513, "startBit": 0, "len": 16, "endian": "big", "scale": 0.25, "offset": 0 }
+    },
+    {
+      "id": "veh.speed",
+      "name": "Скорость",
+      "unit": "kmh",
+      "min": 0,
+      "max": 260,
+      "verified": false,
+      "src": { "type": "can", "canId": 513, "startBit": 32, "len": 16, "endian": "big", "scale": 0.01, "offset": -100 }
+    },
+    {
+      "id": "engine.pedal",
+      "name": "Педаль газа",
+      "unit": "pct",
+      "min": 0,
+      "max": 100,
+      "verified": false,
+      "src": { "type": "can", "canId": 513, "startBit": 48, "len": 8, "endian": "big", "scale": 0.5, "offset": 0 }
+    },
+    {
+      "id": "engine.coolant_t",
+      "name": "Температура ОЖ",
+      "unit": "C",
+      "min": -40,
+      "max": 150,
+      "verified": true,
+      "src": { "type": "obd", "mode": 1, "pid": 5, "len": 1, "scale": 1, "offset": -40, "rateHz": 1 }
+    },
+    {
+      "id": "engine.iat",
+      "name": "Температура впуска",
+      "unit": "C",
+      "min": -40,
+      "max": 120,
+      "verified": true,
+      "src": { "type": "obd", "mode": 1, "pid": 15, "len": 1, "scale": 1, "offset": -40, "rateHz": 1 }
+    },
+    {
+      "id": "engine.map",
+      "name": "Давление во впуске",
+      "unit": "kPa",
+      "min": 0,
+      "max": 255,
+      "verified": true,
+      "src": { "type": "obd", "mode": 1, "pid": 11, "len": 1, "scale": 1, "offset": 0, "rateHz": 5 }
+    },
+    {
+      "id": "engine.load",
+      "name": "Нагрузка",
+      "unit": "pct",
+      "min": 0,
+      "max": 100,
+      "verified": true,
+      "src": { "type": "obd", "mode": 1, "pid": 4, "len": 1, "scale": 0.392156862, "offset": 0, "rateHz": 2 }
+    },
+    {
+      "id": "engine.timing",
+      "name": "УОЗ",
+      "unit": "deg",
+      "min": -64,
+      "max": 64,
+      "verified": true,
+      "src": { "type": "obd", "mode": 1, "pid": 14, "len": 1, "scale": 0.5, "offset": -64, "rateHz": 2 }
+    },
+    {
+      "id": "sys.battery",
+      "name": "Напряжение борта",
+      "unit": "V",
+      "min": 8,
+      "max": 16,
+      "verified": true,
+      "src": { "type": "obd", "mode": 1, "pid": 66, "len": 2, "scale": 0.001, "offset": 0, "rateHz": 1 }
+    },
+    {
+      "id": "sensor.oil_p",
+      "name": "Давление масла",
+      "unit": "bar",
+      "min": 0,
+      "max": 10,
+      "verified": false,
+      "filter": { "type": "ema", "alpha": 0.4 },
+      "src": {
+        "type": "sensor",
+        "channel": "ads1115.a0",
+        "transfer": { "kind": "linear", "scale": 2.5, "offset": -1.25 }
+      }
+    },
+    {
+      "id": "sensor.oil_t",
+      "name": "Температура масла",
+      "unit": "C",
+      "min": -40,
+      "max": 180,
+      "verified": false,
+      "filter": { "type": "ema", "alpha": 0.1 },
+      "src": {
+        "type": "sensor",
+        "channel": "ads1115.a1",
+        "transfer": { "kind": "ntc", "beta": 3380, "r25": 10000, "rSeries": 2200, "vRef": 5.0 }
+      }
+    },
+    {
+      "id": "sensor.egt",
+      "name": "Температура выхлопа",
+      "unit": "C",
+      "min": 0,
+      "max": 1100,
+      "verified": false,
+      "src": {
+        "type": "sensor",
+        "channel": "mcp9600.0",
+        "transfer": { "kind": "linear", "scale": 1, "offset": 0 }
+      }
+    },
+    {
+      "id": "calc.oil_p_margin",
+      "name": "Запас по давлению масла",
+      "unit": "bar",
+      "verified": false,
+      "src": { "type": "calc", "expr": "sensor.oil_p - clamp(engine.rpm / 2000, 0.8, 5.0)" }
+    }
+  ],
+  "requests": [
+    {
+      "txId": 2015,
+      "rxId": 2024,
+      "isotp": true,
+      "pids": [5, 15, 11, 4, 14, 66]
+    }
+  ]
+}

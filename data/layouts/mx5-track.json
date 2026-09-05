@@ -1,0 +1,194 @@
+{
+  "schema": 1,
+  "id": "mx5-track",
+  "name": "MX-5 Track",
+  "author": "Tracraft",
+  "car": "mazda-mx5-nd-2018",
+  "display": { "w": 466, "h": 466, "shape": "round", "safeInset": 10 },
+  "theme": {
+    "bg": "#000000",
+    "fg": "#FFFFFF",
+    "accent": "#FF3B30",
+    "muted": "#6E6E73",
+    "warn": "#FFCC00",
+    "crit": "#FF3B30",
+    "fonts": { "numLarge": "inter_96", "num": "inter_44", "label": "inter_20", "small": "inter_14" }
+  },
+  "sim": { "enabled": true },
+  "screens": [
+    {
+      "id": "main",
+      "name": "Основной",
+      "widgets": [
+        {
+          "id": "rpm-arc",
+          "type": "arc_gauge",
+          "rect": { "x": 8, "y": 8, "w": 450, "h": 450 },
+          "z": 0,
+          "signal": "engine.rpm",
+          "props": {
+            "min": 0,
+            "max": 8000,
+            "startAngle": 135,
+            "endAngle": 405,
+            "thickness": 22,
+            "rounded": true,
+            "color": "#FFFFFF",
+            "trackColor": "#1C1C1E",
+            "peakHold": true,
+            "zones": [
+              { "from": 6600, "to": 7200, "color": "#FFCC00" },
+              { "from": 7200, "to": 8000, "color": "#FF3B30" }
+            ],
+            "ticks": { "major": 1000, "minor": 500, "labels": true, "labelDivisor": 1000 }
+          }
+        },
+        {
+          "id": "shift",
+          "type": "shift_light",
+          "rect": { "x": 133, "y": 46, "w": 200, "h": 16 },
+          "z": 1,
+          "signal": "engine.rpm",
+          "props": {
+            "mode": "segments",
+            "stages": [
+              { "at": 6000, "color": "#30D158" },
+              { "at": 6600, "color": "#FFCC00" },
+              { "at": 7200, "color": "#FF3B30", "blinkHz": 6 }
+            ]
+          }
+        },
+        {
+          "id": "speed",
+          "type": "numeric",
+          "rect": { "x": 123, "y": 152, "w": 220, "h": 100 },
+          "z": 1,
+          "signal": "veh.speed",
+          "unit": "kmh",
+          "props": { "decimals": 0, "font": "numLarge", "align": "center", "showUnit": false, "color": "#FFFFFF" }
+        },
+        {
+          "id": "speed-unit",
+          "type": "label",
+          "rect": { "x": 183, "y": 252, "w": 100, "h": 24 },
+          "z": 1,
+          "props": { "text": "km/h", "font": "small", "align": "center", "color": "#6E6E73" }
+        },
+        {
+          "id": "coolant",
+          "type": "numeric",
+          "rect": { "x": 62, "y": 292, "w": 140, "h": 72 },
+          "z": 1,
+          "signal": "engine.coolant_t",
+          "unit": "C",
+          "props": {
+            "decimals": 0,
+            "font": "num",
+            "align": "center",
+            "caption": "ОЖ",
+            "colorFromZones": true,
+            "zones": [
+              { "from": -40, "to": 60, "color": "#0A84FF" },
+              { "from": 60, "to": 105, "color": "#FFFFFF" },
+              { "from": 105, "to": 150, "color": "#FF3B30" }
+            ]
+          }
+        },
+        {
+          "id": "oil-press",
+          "type": "numeric",
+          "rect": { "x": 264, "y": 292, "w": 140, "h": 72 },
+          "z": 1,
+          "signal": "sensor.oil_p",
+          "unit": "bar",
+          "props": {
+            "decimals": 1,
+            "font": "num",
+            "align": "center",
+            "caption": "МАСЛО",
+            "colorFromZones": true,
+            "zones": [
+              { "from": 0, "to": 1, "color": "#FF3B30" },
+              { "from": 1, "to": 10, "color": "#FFFFFF" }
+            ]
+          }
+        },
+        {
+          "id": "egt",
+          "type": "numeric",
+          "rect": { "x": 173, "y": 372, "w": 120, "h": 56 },
+          "z": 1,
+          "signal": "sensor.egt",
+          "unit": "C",
+          "props": { "decimals": 0, "font": "label", "align": "center", "caption": "EGT" }
+        },
+        {
+          "id": "oil-warn",
+          "type": "warning",
+          "rect": { "x": 213, "y": 110, "w": 40, "h": 40 },
+          "z": 2,
+          "props": {
+            "icon": "oil",
+            "color": "#FF3B30",
+            "blinkHz": 3,
+            "when": { "signal": "calc.oil_p_margin", "cmp": "<", "value": 0, "delayMs": 300 }
+          }
+        }
+      ]
+    },
+    {
+      "id": "temps",
+      "name": "Температуры",
+      "widgets": [
+        {
+          "id": "temp-graph",
+          "type": "graph",
+          "rect": { "x": 60, "y": 90, "w": 346, "h": 200 },
+          "z": 0,
+          "props": {
+            "min": 0,
+            "max": 140,
+            "windowSec": 120,
+            "lineWidth": 2,
+            "signals": [
+              { "signal": "engine.coolant_t", "color": "#0A84FF" },
+              { "signal": "sensor.oil_t", "color": "#FFCC00" }
+            ],
+            "ticks": { "major": 20, "labels": true }
+          }
+        },
+        {
+          "id": "gforce",
+          "type": "gforce",
+          "rect": { "x": 173, "y": 300, "w": 120, "h": 120 },
+          "z": 0,
+          "props": { "range": 1.2, "rings": 3, "trail": true, "signalX": "imu.ax", "signalY": "imu.ay" }
+        }
+      ]
+    }
+  ],
+  "alarms": [
+    {
+      "id": "oil-pressure",
+      "name": "Давление масла",
+      "when": { "signal": "calc.oil_p_margin", "cmp": "<", "value": 0, "hysteresis": 0.2, "delayMs": 300 },
+      "arm": { "signal": "engine.rpm", "cmp": ">", "value": 1200 },
+      "severity": "critical",
+      "action": { "popup": "ДАВЛЕНИЕ МАСЛА", "blink": true, "latch": true }
+    },
+    {
+      "id": "coolant-hot",
+      "name": "Перегрев",
+      "when": { "signal": "engine.coolant_t", "cmp": ">", "value": 108, "hysteresis": 3, "delayMs": 2000 },
+      "severity": "warn",
+      "action": { "popup": "ПЕРЕГРЕВ", "blink": true }
+    },
+    {
+      "id": "egt-high",
+      "name": "EGT",
+      "when": { "signal": "sensor.egt", "cmp": ">", "value": 950, "hysteresis": 25, "delayMs": 1000 },
+      "severity": "warn",
+      "action": { "popup": "EGT" }
+    }
+  ]
+}

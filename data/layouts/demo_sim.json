@@ -1,0 +1,491 @@
+{
+  "schema": 1,
+  "id": "new-layout",
+  "name": "New Layout",
+  "display": {
+    "w": 466,
+    "h": 466,
+    "shape": "round",
+    "safeInset": 10
+  },
+  "theme": {
+    "bg": "#000000",
+    "fg": "#FFFFFF",
+    "accent": "#FF3B30",
+    "muted": "#6E6E73",
+    "warn": "#FFCC00",
+    "crit": "#FF3B30"
+  },
+  "sim": {
+    "enabled": true
+  },
+  "screens": [
+    {
+      "id": "main",
+      "name": "Main",
+      "widgets": [
+        {
+          "type": "numeric",
+          "rect": {
+            "x": 60,
+            "y": 80,
+            "w": 140,
+            "h": 90
+          },
+          "z": 1,
+          "signal": "engine.coolant_t",
+          "unit": "°C",
+          "props": {
+            "decimals": 0,
+            "align": "center",
+            "caption": "COOLANT"
+          },
+          "id": "numeric-1"
+        },
+        {
+          "type": "numeric",
+          "rect": {
+            "x": 266,
+            "y": 80,
+            "w": 140,
+            "h": 90
+          },
+          "z": 1,
+          "signal": "sensor.oil_p",
+          "unit": "bar",
+          "props": {
+            "decimals": 1,
+            "align": "center",
+            "caption": "OIL P"
+          },
+          "id": "numeric-2"
+        },
+        {
+          "type": "numeric",
+          "rect": {
+            "x": 60,
+            "y": 296,
+            "w": 140,
+            "h": 90
+          },
+          "z": 1,
+          "signal": "engine.rpm",
+          "unit": "rpm",
+          "props": {
+            "decimals": 0,
+            "align": "center",
+            "caption": "RPM"
+          },
+          "id": "numeric-3"
+        },
+        {
+          "type": "numeric",
+          "rect": {
+            "x": 266,
+            "y": 296,
+            "w": 140,
+            "h": 90
+          },
+          "z": 1,
+          "signal": "veh.speed",
+          "unit": "km/h",
+          "props": {
+            "decimals": 0,
+            "align": "center",
+            "caption": "SPEED"
+          },
+          "id": "numeric-4"
+        }
+      ]
+    },
+    {
+      "id": "screen-5",
+      "name": "Data",
+      "widgets": [
+        {
+          "type": "numeric",
+          "rect": {
+            "x": 52,
+            "y": 60,
+            "w": 196,
+            "h": 184
+          },
+          "z": 1,
+          "signal": "engine.coolant_t",
+          "unit": "°C",
+          "props": {
+            "decimals": 0,
+            "align": "center",
+            "caption": "COOLANT",
+            "color": "#ffffff",
+            "showUnit": true,
+            "colorFromZones": false
+          },
+          "id": "numeric-6"
+        },
+        {
+          "type": "numeric",
+          "rect": {
+            "x": 232,
+            "y": 64,
+            "w": 188,
+            "h": 184
+          },
+          "z": 1,
+          "signal": "sensor.oil_p",
+          "unit": "bar",
+          "props": {
+            "decimals": 1,
+            "align": "center",
+            "caption": "OIL P",
+            "color": "#ffffff",
+            "showUnit": true,
+            "colorFromZones": false
+          },
+          "id": "numeric-7"
+        },
+        {
+          "type": "numeric",
+          "rect": {
+            "x": 236,
+            "y": 268,
+            "w": 180,
+            "h": 160
+          },
+          "z": 1,
+          "signal": "sensor.egt",
+          "unit": "°C",
+          "props": {
+            "decimals": 0,
+            "align": "center",
+            "caption": "EGT",
+            "color": "#ffffff",
+            "showUnit": true,
+            "colorFromZones": false
+          },
+          "id": "numeric-8"
+        },
+        {
+          "type": "numeric",
+          "rect": {
+            "x": 60,
+            "y": 268,
+            "w": 180,
+            "h": 160
+          },
+          "z": 1,
+          "signal": "sensor.oil_t",
+          "unit": "°C",
+          "props": {
+            "decimals": 0,
+            "align": "center",
+            "caption": "OIL T",
+            "color": "#ffffff",
+            "showUnit": true,
+            "colorFromZones": false
+          },
+          "id": "numeric-9"
+        }
+      ]
+    },
+    {
+      "id": "screen-10",
+      "name": "Drive Info",
+      "widgets": [
+        {
+          "type": "bar",
+          "rect": {
+            "x": 120,
+            "y": 184,
+            "w": 100,
+            "h": 196
+          },
+          "z": 0,
+          "signal": "pedal.brake",
+          "props": {
+            "min": 0,
+            "max": 1,
+            "orientation": "vertical",
+            "color": "#FF9F0A",
+            "trackColor": "#1C1C1E"
+          },
+          "id": "bar-11",
+          "unit": ""
+        },
+        {
+          "type": "bar",
+          "rect": {
+            "x": 236,
+            "y": 184,
+            "w": 100,
+            "h": 196
+          },
+          "z": 0,
+          "signal": "pedal.accel",
+          "props": {
+            "min": 0,
+            "max": 1,
+            "orientation": "vertical",
+            "color": "#6c0aff",
+            "trackColor": "#1C1C1E"
+          },
+          "id": "bar-12",
+          "unit": ""
+        },
+        {
+          "type": "steering",
+          "rect": {
+            "x": 120,
+            "y": 388,
+            "w": 220,
+            "h": 80
+          },
+          "z": 1,
+          "signal": "steer.pos",
+          "props": {
+            "color": "#0A84FF",
+            "trackColor": "#262626",
+            "radius": 4,
+            "centerMark": true,
+            "showValue": true,
+            "maxAngle": 450,
+            "deadzone": 0
+          },
+          "id": "steering-13",
+          "unit": ""
+        },
+        {
+          "type": "numeric",
+          "rect": {
+            "x": 120,
+            "y": 260,
+            "w": 100,
+            "h": 68
+          },
+          "z": 1,
+          "signal": "pedal.brake",
+          "unit": "",
+          "props": {
+            "decimals": 1,
+            "fontSize": 0,
+            "align": "center",
+            "showUnit": false,
+            "color": "#FFFFFF",
+            "colorFromZones": false
+          },
+          "id": "numeric-15"
+        },
+        {
+          "type": "numeric",
+          "rect": {
+            "x": 236,
+            "y": 260,
+            "w": 100,
+            "h": 68
+          },
+          "z": 1,
+          "signal": "pedal.accel",
+          "unit": "",
+          "props": {
+            "decimals": 1,
+            "fontSize": 0,
+            "align": "center",
+            "showUnit": false,
+            "color": "#FFFFFF",
+            "colorFromZones": false
+          },
+          "id": "numeric-16"
+        },
+        {
+          "type": "label",
+          "rect": {
+            "x": 16,
+            "y": 196,
+            "w": 96,
+            "h": 44
+          },
+          "z": 1,
+          "props": {
+            "text": "BRAKE",
+            "fontSize": 35,
+            "align": "center",
+            "color": "#ffffff"
+          },
+          "id": "label-17",
+          "signal": "",
+          "unit": ""
+        },
+        {
+          "type": "label",
+          "rect": {
+            "x": 352,
+            "y": 204,
+            "w": 100,
+            "h": 24
+          },
+          "z": 1,
+          "props": {
+            "text": "ACCEL",
+            "fontSize": 35,
+            "align": "center",
+            "color": "#ffffff"
+          },
+          "id": "label-18",
+          "signal": "",
+          "unit": ""
+        },
+        {
+          "type": "graph",
+          "rect": {
+            "x": 40,
+            "y": 44,
+            "w": 364,
+            "h": 144
+          },
+          "z": 0,
+          "props": {
+            "min": 0,
+            "max": 1,
+            "windowSec": 10,
+            "lineWidth": 5,
+            "signals": [
+              {
+                "signal": "pedal.brake",
+                "color": "#FF9F0A"
+              },
+              {
+                "signal": "pedal.accel",
+                "color": "#850aff"
+              }
+            ],
+            "fill": false
+          },
+          "id": "graph-19",
+          "signal": "",
+          "unit": ""
+        }
+      ]
+    },
+    {
+      "id": "screen-20",
+      "name": "G_meter",
+      "widgets": [
+        {
+          "type": "gforce",
+          "rect": {
+            "x": 12,
+            "y": 20,
+            "w": 436,
+            "h": 460
+          },
+          "z": 0,
+          "props": {
+            "range": 2,
+            "rings": 4,
+            "trail": true,
+            "signalX": "imu.ax",
+            "signalY": "imu.ay"
+          },
+          "id": "gforce-21",
+          "signal": "",
+          "unit": ""
+        },
+        {
+          "type": "numeric",
+          "rect": {
+            "x": 132,
+            "y": 12,
+            "w": 196,
+            "h": 104
+          },
+          "z": 1,
+          "signal": "veh.speed",
+          "unit": "km/h",
+          "props": {
+            "decimals": 0,
+            "fontSize": 0,
+            "align": "center",
+            "showUnit": true,
+            "color": "#FFFFFF",
+            "colorFromZones": false
+          },
+          "id": "numeric-22"
+        }
+      ]
+    },
+    {
+      "id": "screen-23",
+      "name": "Graph",
+      "widgets": [
+        {
+          "type": "graph",
+          "rect": {
+            "x": 0,
+            "y": 100,
+            "w": 448,
+            "h": 260
+          },
+          "z": 0,
+          "props": {
+            "min": 0,
+            "max": 1,
+            "windowSec": 3,
+            "lineWidth": 5,
+            "signals": [
+              {
+                "signal": "pedal.brake",
+                "color": "#0A84FF"
+              },
+              {
+                "signal": "pedal.accel",
+                "color": "#FF9F0A"
+              }
+            ],
+            "fill": true
+          },
+          "id": "graph-24",
+          "signal": "",
+          "unit": ""
+        },
+        {
+          "type": "label",
+          "rect": {
+            "x": 184,
+            "y": 64,
+            "w": 100,
+            "h": 24
+          },
+          "z": 1,
+          "props": {
+            "text": "ACCEL",
+            "fontSize": 70,
+            "align": "center",
+            "color": "#ffa200"
+          },
+          "id": "label-25",
+          "signal": "",
+          "unit": ""
+        },
+        {
+          "type": "label",
+          "rect": {
+            "x": 184,
+            "y": 388,
+            "w": 100,
+            "h": 24
+          },
+          "z": 1,
+          "props": {
+            "text": "BRAKE",
+            "fontSize": 70,
+            "align": "center",
+            "color": "#0084ff"
+          },
+          "id": "label-26",
+          "signal": "",
+          "unit": ""
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,249 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracraft.dev/schema/car-profile-1.json",
+  "title": "Tracraft Car Profile",
+  "description": "Описание шины конкретной модели авто и правил получения сигналов. Лейауты ссылаются только на id сигналов, поэтому смена профиля не ломает интерфейс.",
+  "type": "object",
+  "required": ["schema", "id", "name", "bus", "signals"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": 1 },
+    "id": { "$ref": "#/$defs/slug" },
+    "name": { "type": "string", "maxLength": 64 },
+    "vehicle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "make": { "type": "string" },
+        "model": { "type": "string" },
+        "generation": { "type": "string" },
+        "yearFrom": { "type": "integer" },
+        "yearTo": { "type": "integer" },
+        "engine": { "type": "string" }
+      }
+    },
+    "source": {
+      "type": "string",
+      "description": "Откуда взяты данные: opendbc, собственное логирование, форум и т.п."
+    },
+    "bus": { "$ref": "#/$defs/bus" },
+    "signals": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/signalDef" }
+    },
+    "requests": {
+      "type": "array",
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/request" },
+      "description": "Активные запросы. Выполняются только если device.json разрешает передачу в шину."
+    }
+  },
+
+  "$defs": {
+    "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,47}$" },
+    "signalId": { "type": "string", "pattern": "^[a-z]+\\.[a-z0-9_]+$" },
+
+    "bus": {
+      "type": "object",
+      "required": ["kind", "bitrate"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["can2.0", "canfd"], "default": "can2.0" },
+        "bitrate": { "type": "integer", "enum": [125000, 250000, 500000, 1000000] },
+        "tap": {
+          "enum": ["obd2", "direct"],
+          "description": "Куда подключён девайс: разъём OBD-II (пины 6/14) или прямой тап в шину за шлюзом."
+        },
+        "listenOnly": {
+          "type": "boolean",
+          "default": true,
+          "description": "true = TWAI в режиме listen-only, устройство физически не может ничего передать."
+        }
+      }
+    },
+
+    "unit": {
+      "enum": ["rpm", "kmh", "C", "kPa", "bar", "V", "A", "pct", "deg", "l_h", "g", "s", "count", "bool", "raw"],
+      "description": "Каноническая единица. Пересчёт в отображаемую делает прошивка."
+    },
+
+    "signalDef": {
+      "type": "object",
+      "required": ["id", "name", "unit", "src"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/signalId" },
+        "name": { "type": "string", "maxLength": 32 },
+        "unit": { "$ref": "#/$defs/unit" },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "filter": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": { "enum": ["none", "ema", "median"], "default": "none" },
+            "alpha": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.3 }
+          }
+        },
+        "verified": {
+          "type": "boolean",
+          "default": false,
+          "description": "false = разбор взят из внешнего источника и ещё не подтверждён логированием на живой машине."
+        },
+        "src": {
+          "oneOf": [
+            { "$ref": "#/$defs/srcCan" },
+            { "$ref": "#/$defs/srcObd" },
+            { "$ref": "#/$defs/srcSensor" },
+            { "$ref": "#/$defs/srcCalc" }
+          ]
+        }
+      }
+    },
+
+    "srcCan": {
+      "type": "object",
+      "title": "Разбор широковещательного CAN-кадра",
+      "required": ["type", "canId", "startBit", "len"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "can" },
+        "canId": { "type": "integer", "minimum": 0, "maximum": 536870911 },
+        "extended": { "type": "boolean", "default": false },
+        "startBit": { "type": "integer", "minimum": 0, "maximum": 63 },
+        "len": { "type": "integer", "minimum": 1, "maximum": 32 },
+        "endian": { "enum": ["big", "little"], "default": "big" },
+        "signed": { "type": "boolean", "default": false },
+        "scale": { "type": "number", "default": 1 },
+        "offset": { "type": "number", "default": 0 },
+        "mux": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Мультиплексированное сообщение: сигнал валиден только при совпадении значения селектора.",
+          "properties": {
+            "startBit": { "type": "integer" },
+            "len": { "type": "integer" },
+            "value": { "type": "integer" }
+          }
+        }
+      }
+    },
+
+    "srcObd": {
+      "type": "object",
+      "title": "Запрос OBD-II или UDS",
+      "required": ["type", "mode", "pid"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "obd" },
+        "mode": { "type": "integer", "enum": [1, 34], "description": "1 = стандартный OBD mode 01, 34 = 0x22 UDS ReadDataByIdentifier." },
+        "pid": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "byteOffset": { "type": "integer", "default": 0 },
+        "len": { "type": "integer", "minimum": 1, "maximum": 4, "default": 1 },
+        "endian": { "enum": ["big", "little"], "default": "big" },
+        "signed": { "type": "boolean", "default": false },
+        "scale": { "type": "number", "default": 1 },
+        "offset": { "type": "number", "default": 0 },
+        "rateHz": { "type": "number", "default": 2, "maximum": 20 }
+      }
+    },
+
+    "srcSensor": {
+      "type": "object",
+      "title": "Внешний датчик",
+      "required": ["type", "channel"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "sensor" },
+        "channel": {
+          "type": "string",
+          "description": "Логический канал из sensors.json, например ads1115.a0 или mcp9600.0 или pcnt.0"
+        },
+        "transfer": {
+          "type": "object",
+          "description": "Преобразование сырого значения в физическое.",
+          "oneOf": [
+            {
+              "required": ["kind", "scale"],
+              "properties": {
+                "kind": { "const": "linear" },
+                "scale": { "type": "number" },
+                "offset": { "type": "number", "default": 0 }
+              }
+            },
+            {
+              "required": ["kind", "points"],
+              "properties": {
+                "kind": { "const": "table" },
+                "points": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 32,
+                  "items": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": { "type": "number" }
+                  },
+                  "description": "Пары [сырое, физическое] с линейной интерполяцией. Для NTC и нелинейных датчиков."
+                }
+              }
+            },
+            {
+              "required": ["kind", "beta", "r25", "rSeries", "vRef"],
+              "properties": {
+                "kind": { "const": "ntc" },
+                "beta": { "type": "number" },
+                "r25": { "type": "number" },
+                "rSeries": { "type": "number" },
+                "vRef": { "type": "number" }
+              }
+            },
+            {
+              "required": ["kind", "pulsesPerRev"],
+              "properties": {
+                "kind": { "const": "frequency" },
+                "pulsesPerRev": { "type": "number" },
+                "scale": { "type": "number", "default": 1 }
+              }
+            }
+          ]
+        }
+      }
+    },
+
+    "srcCalc": {
+      "type": "object",
+      "title": "Вычисляемый канал",
+      "required": ["type", "expr"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "calc" },
+        "expr": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Выражение над другими сигналами, например 'sensor.map_p - 101.3'. Поддержка + - * / min max abs clamp."
+        }
+      }
+    },
+
+    "request": {
+      "type": "object",
+      "required": ["txId", "rxId"],
+      "additionalProperties": false,
+      "properties": {
+        "txId": { "type": "integer", "description": "Обычно 0x7DF для функционального запроса или 0x7E0 к ECU." },
+        "rxId": { "type": "integer", "description": "Обычно 0x7E8." },
+        "extended": { "type": "boolean", "default": false },
+        "isotp": { "type": "boolean", "default": true },
+        "pids": {
+          "type": "array",
+          "items": { "type": "integer" },
+          "description": "Какие PID опрашивать по кругу через этот адрес."
+        }
+      }
+    }
+  }
+}

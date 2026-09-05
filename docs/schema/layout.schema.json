@@ -1,0 +1,426 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracraft.dev/schema/layout-1.json",
+  "title": "Tracraft Dash Layout",
+  "description": "Описание набора экранов дисплея. Один и тот же файл рисуют прошивка (LVGL/Arduino_GFX) и веб-редактор.",
+  "type": "object",
+  "required": ["schema", "id", "name", "display", "screens"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": 1 },
+    "id": { "$ref": "#/$defs/slug" },
+    "name": { "type": "string", "maxLength": 48 },
+    "author": { "type": "string", "maxLength": 48 },
+    "car": {
+      "$ref": "#/$defs/slug",
+      "description": "id профиля машины, под который делался лейаут. Пустое значение = универсальный."
+    },
+    "display": { "$ref": "#/$defs/display" },
+    "theme": { "$ref": "#/$defs/theme" },
+    "sim": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Симуляция сигналов на устройстве. Флаг живёт в лейауте, чтобы проверенный в редакторе файл вёл себя на железе так же.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "true — прошивка крутит синтетические сигналы вместо CAN и датчиков."
+        }
+      }
+    },
+    "screens": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/screen" }
+    },
+    "alarms": {
+      "type": "array",
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/alarm" }
+    },
+    "editor": {
+      "type": "object",
+      "description": "Служебные данные редактора (зум, направляющие, полярные подсказки). Прошивка игнорирует."
+    }
+  },
+
+  "$defs": {
+    "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$" },
+    "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+    "signal": {
+      "type": "string",
+      "pattern": "^[a-z]+\\.[a-z0-9_]+$",
+      "description": "ID сигнала в шине, например engine.rpm или sensor.oil_p"
+    },
+
+    "display": {
+      "type": "object",
+      "required": ["w", "h", "shape"],
+      "additionalProperties": false,
+      "properties": {
+        "w": { "type": "integer", "minimum": 64, "maximum": 2048 },
+        "h": { "type": "integer", "minimum": 64, "maximum": 2048 },
+        "shape": { "enum": ["round", "rect"] },
+        "safeInset": {
+          "type": "integer",
+          "default": 8,
+          "description": "Отступ от края в px: зона, куда не стоит класть текст на круглом стекле."
+        }
+      }
+    },
+
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bg": { "$ref": "#/$defs/color", "default": "#000000" },
+        "fg": { "$ref": "#/$defs/color", "default": "#FFFFFF" },
+        "accent": { "$ref": "#/$defs/color", "default": "#FF3B30" },
+        "muted": { "$ref": "#/$defs/color", "default": "#6E6E73" },
+        "warn": { "$ref": "#/$defs/color", "default": "#FFCC00" },
+        "crit": { "$ref": "#/$defs/color", "default": "#FF3B30" },
+        "fonts": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Роль → имя шрифта, доступного в прошивке. Роли: num, numLarge, label, small."
+        }
+      }
+    },
+
+    "screen": {
+      "type": "object",
+      "required": ["id", "widgets"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/slug" },
+        "name": { "type": "string", "maxLength": 32 },
+        "bg": { "$ref": "#/$defs/color" },
+        "autoShow": {
+          "$ref": "#/$defs/condition",
+          "description": "Условие автоматического показа экрана, например прогрев или трек-режим."
+        },
+        "widgets": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/widget" }
+        }
+      }
+    },
+
+    "rect": {
+      "type": "object",
+      "required": ["x", "y", "w", "h"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "integer" },
+        "y": { "type": "integer" },
+        "w": { "type": "integer", "minimum": 1 },
+        "h": { "type": "integer", "minimum": 1 }
+      }
+    },
+
+    "widgetBase": {
+      "type": "object",
+      "required": ["id", "type", "rect"],
+      "properties": {
+        "id": { "$ref": "#/$defs/slug" },
+        "type": {
+          "enum": ["arc_gauge", "needle_gauge", "bar", "numeric", "label", "shift_light", "warning", "graph", "gforce", "steering", "image"]
+        },
+        "rect": { "$ref": "#/$defs/rect" },
+        "z": { "type": "integer", "default": 0 },
+        "visible": { "$ref": "#/$defs/condition" },
+        "signal": { "$ref": "#/$defs/signal" },
+        "unit": {
+          "type": "string",
+          "description": "Единица отображения. Прошивка конвертирует из канонической единицы сигнала (kPa→bar/psi, C→F, kmh→mph)."
+        }
+      }
+    },
+
+    "scaleProps": {
+      "type": "object",
+      "properties": {
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "zones": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "required": ["from", "to", "color"],
+            "additionalProperties": false,
+            "properties": {
+              "from": { "type": "number" },
+              "to": { "type": "number" },
+              "color": { "$ref": "#/$defs/color" }
+            }
+          }
+        },
+        "ticks": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "major": { "type": "number" },
+            "minor": { "type": "number" },
+            "labels": { "type": "boolean", "default": true },
+            "labelDivisor": { "type": "number", "default": 1, "description": "Делитель подписей: 1000 для оборотов в тысячах." }
+          }
+        },
+        "color": { "$ref": "#/$defs/color" },
+        "trackColor": { "$ref": "#/$defs/color" },
+        "peakHold": { "type": "boolean", "default": false, "description": "Показывать метку максимума за последние секунды." }
+      }
+    },
+
+    "widget": {
+      "allOf": [{ "$ref": "#/$defs/widgetBase" }],
+      "oneOf": [
+        {
+          "title": "arc_gauge — дуговая шкала",
+          "properties": {
+            "type": { "const": "arc_gauge" },
+            "props": {
+              "allOf": [{ "$ref": "#/$defs/scaleProps" }],
+              "properties": {
+                "startAngle": { "type": "number", "default": 135, "description": "Градусы, 0 = вправо, по часовой." },
+                "endAngle": { "type": "number", "default": 405 },
+                "thickness": { "type": "integer", "minimum": 2, "default": 16 },
+                "rounded": { "type": "boolean", "default": true },
+                "showValue": { "type": "boolean", "default": false }
+              }
+            }
+          }
+        },
+        {
+          "title": "needle_gauge — круглая шкала со стрелкой",
+          "properties": {
+            "type": { "const": "needle_gauge" },
+            "props": {
+              "allOf": [{ "$ref": "#/$defs/scaleProps" }],
+              "properties": {
+                "startAngle": { "type": "number", "default": 135 },
+                "endAngle": { "type": "number", "default": 405 },
+                "needleColor": { "$ref": "#/$defs/color" },
+                "needleWidth": { "type": "integer", "default": 4 },
+                "hubRadius": { "type": "integer", "default": 8 }
+              }
+            }
+          }
+        },
+        {
+          "title": "bar — линейная полоса",
+          "properties": {
+            "type": { "const": "bar" },
+            "props": {
+              "allOf": [{ "$ref": "#/$defs/scaleProps" }],
+              "properties": {
+                "orientation": { "enum": ["horizontal", "vertical"], "default": "horizontal" },
+                "segments": { "type": "integer", "minimum": 0, "default": 0, "description": "0 = сплошная полоса, иначе число сегментов." },
+                "radius": { "type": "integer", "default": 4 }
+              }
+            }
+          }
+        },
+        {
+          "title": "numeric — числовое значение",
+          "properties": {
+            "type": { "const": "numeric" },
+            "props": {
+              "type": "object",
+              "properties": {
+                "decimals": { "type": "integer", "minimum": 0, "maximum": 3, "default": 0 },
+                "font": { "type": "string", "default": "num" },
+                "fontSize": { "type": "integer", "minimum": 0, "maximum": 200, "default": 0, "description": "Размер шрифта в px. 0 = автоподгонка под rect по высоте и ширине." },
+                "align": { "enum": ["left", "center", "right"], "default": "center" },
+                "color": { "$ref": "#/$defs/color" },
+                "showUnit": { "type": "boolean", "default": true },
+                "caption": { "type": "string", "maxLength": 16 },
+                "colorFromZones": { "type": "boolean", "default": false },
+                "zones": { "$ref": "#/$defs/scaleProps/properties/zones" },
+                "staleAfterMs": { "type": "integer", "default": 2000, "description": "Через сколько без данных показывать прочерки." }
+              }
+            }
+          }
+        },
+        {
+          "title": "label — статичный текст",
+          "properties": {
+            "type": { "const": "label" },
+            "props": {
+              "type": "object",
+              "required": ["text"],
+              "properties": {
+                "text": { "type": "string", "maxLength": 32 },
+                "font": { "type": "string", "default": "label" },
+                "fontSize": { "type": "integer", "minimum": 0, "maximum": 200, "default": 0, "description": "Размер шрифта в px. 0 = автоподгонка под rect по высоте и ширине." },
+                "align": { "enum": ["left", "center", "right"], "default": "center" },
+                "color": { "$ref": "#/$defs/color" }
+              }
+            }
+          }
+        },
+        {
+          "title": "shift_light — индикатор переключения передачи",
+          "properties": {
+            "type": { "const": "shift_light" },
+            "props": {
+              "type": "object",
+              "required": ["stages"],
+              "properties": {
+                "mode": { "enum": ["segments", "arc", "flash"], "default": "segments" },
+                "stages": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "items": {
+                    "type": "object",
+                    "required": ["at", "color"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "at": { "type": "number", "description": "Значение сигнала, с которого стадия активна." },
+                      "color": { "$ref": "#/$defs/color" },
+                      "blinkHz": { "type": "number", "default": 0 }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "title": "warning — иконка по условию",
+          "properties": {
+            "type": { "const": "warning" },
+            "props": {
+              "type": "object",
+              "required": ["icon"],
+              "properties": {
+                "icon": { "enum": ["oil", "temp", "battery", "check_engine", "fuel", "brake", "generic"] },
+                "color": { "$ref": "#/$defs/color" },
+                "blinkHz": { "type": "number", "default": 0 },
+                "when": { "$ref": "#/$defs/condition" }
+              }
+            }
+          }
+        },
+        {
+          "title": "graph — бегущий график",
+          "properties": {
+            "type": { "const": "graph" },
+            "props": {
+              "allOf": [{ "$ref": "#/$defs/scaleProps" }],
+              "properties": {
+                "windowSec": { "type": "number", "default": 30 },
+                "lineWidth": { "type": "integer", "default": 2 },
+                "fill": { "type": "boolean", "default": false },
+                "signals": {
+                  "type": "array",
+                  "maxItems": 4,
+                  "items": {
+                    "type": "object",
+                    "required": ["signal", "color"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "signal": { "$ref": "#/$defs/signal" },
+                      "color": { "$ref": "#/$defs/color" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "title": "gforce — акселерометр",
+          "properties": {
+            "type": { "const": "gforce" },
+            "props": {
+              "type": "object",
+              "properties": {
+                "range": { "type": "number", "default": 1.5 },
+                "rings": { "type": "integer", "default": 3 },
+                "trail": { "type": "boolean", "default": true },
+                "signalX": { "$ref": "#/$defs/signal" },
+                "signalY": { "$ref": "#/$defs/signal" }
+              }
+            }
+          }
+        },
+        {
+          "title": "steering — положение руля, полоса из центра",
+          "properties": {
+            "type": { "const": "steering" },
+            "props": {
+              "type": "object",
+              "properties": {
+                "color": { "$ref": "#/$defs/color" },
+                "trackColor": { "$ref": "#/$defs/color" },
+                "radius": { "type": "integer", "default": 4 },
+                "centerMark": { "type": "boolean", "default": true, "description": "Риска нулевого положения." },
+                "showValue": { "type": "boolean", "default": false, "description": "Цифры угла под полосой." },
+                "maxAngle": { "type": "number", "default": 450, "description": "Угол в градусах при полном отклонении, только для подписи." },
+                "deadzone": { "type": "number", "minimum": 0, "maximum": 0.5, "default": 0, "description": "Зона нечувствительности вокруг центра." }
+              }
+            }
+          }
+        },
+        {
+          "title": "image — картинка из файловой системы",
+          "properties": {
+            "type": { "const": "image" },
+            "props": {
+              "type": "object",
+              "required": ["src"],
+              "properties": {
+                "src": { "type": "string", "description": "Путь в LittleFS, например /img/logo.png" },
+                "opacity": { "type": "integer", "minimum": 0, "maximum": 255, "default": 255 }
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    "condition": {
+      "type": "object",
+      "required": ["signal", "cmp", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "signal": { "$ref": "#/$defs/signal" },
+        "cmp": { "enum": ["<", "<=", ">", ">=", "==", "!=", "stale", "valid"] },
+        "value": { "type": "number" },
+        "hysteresis": { "type": "number", "default": 0 },
+        "delayMs": { "type": "integer", "minimum": 0, "default": 0 }
+      }
+    },
+
+    "alarm": {
+      "type": "object",
+      "required": ["id", "when", "severity"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/slug" },
+        "name": { "type": "string", "maxLength": 32 },
+        "when": { "$ref": "#/$defs/condition" },
+        "arm": {
+          "$ref": "#/$defs/condition",
+          "description": "Дополнительное условие взведения: например давление масла проверяем только выше 2000 об/мин."
+        },
+        "severity": { "enum": ["info", "warn", "critical"] },
+        "action": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "popup": { "type": "string", "maxLength": 32 },
+            "blink": { "type": "boolean", "default": false },
+            "gotoScreen": { "$ref": "#/$defs/slug" },
+            "latch": { "type": "boolean", "default": false, "description": "Держать до подтверждения касанием." }
+          }
+        }
+      }
+    }
+  }
+}

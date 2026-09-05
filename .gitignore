@@ -3,3 +3,15 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+
+# Веб-редактор
+web/node_modules
+web/dist
+web/.vite
+
+# Сборка веб-редактора, которая заливается в LittleFS
+data/www
+
+# Локальные настройки устройства и логи
+data/device.local.json
+logs
