@@ -7,7 +7,7 @@
 import { create } from 'zustand'
 import {
   Layout, Screen, Widget, Theme, DISPLAY_466, DEFAULT_THEME,
-  ArcGaugeWidget, NumericWidget, ShiftLightWidget, LabelWidget, BarWidget,
+  NumericWidget, ShiftLightWidget, LabelWidget, BarWidget,
 } from '@/schema/layout'
 
 // ─── Стартовый лейаут (MX-5 Dash preview) ────────────────────────────────────
@@ -26,27 +26,26 @@ const STARTER_LAYOUT: Layout = {
       widgets: [
         {
           id: 'rpm',
-          type: 'arc_gauge',
-          rect: { x: 8, y: 8, w: 450, h: 450 },
-          z: 0,
+          type: 'numeric',
+          rect: { x: 133, y: 86, w: 200, h: 60 },
+          z: 1,
           signal: 'engine.rpm',
+          unit: 'rpm',
           props: {
-            min: 0, max: 8000,
-            startAngle: 135, endAngle: 405,
-            thickness: 20, rounded: true,
-            color: '#FFFFFF', trackColor: '#1C1C1E',
+            decimals: 0, align: 'center', color: '#FFFFFF',
+            showUnit: true, fontSize: 0,
+            colorFromZones: true,
             zones: [
               { from: 6600, to: 7200, color: '#FFCC00' },
               { from: 7200, to: 8000, color: '#FF3B30' },
             ],
-            ticks: { major: 1000, minor: 500, labels: true, labelDivisor: 1000 },
           },
-        } satisfies ArcGaugeWidget,
+        } satisfies NumericWidget,
 
         {
           id: 'shift',
           type: 'shift_light',
-          rect: { x: 133, y: 46, w: 200, h: 14 },
+          rect: { x: 103, y: 40, w: 260, h: 26 },
           z: 1,
           signal: 'engine.rpm',
           props: {
@@ -172,6 +171,8 @@ interface EditorState {
   updateWidget: (screenIdx: number, widget: Widget) => void
   addWidget: (screenIdx: number, widget: Widget) => void
   removeWidget: (screenIdx: number, widgetId: string) => void
+  /// Сдвинуть виджет в порядке z: dir +1 — выше, -1 — ниже
+  moveWidgetZ: (screenIdx: number, widgetId: string, dir: 1 | -1) => void
   moveWidget: (screenIdx: number, widgetId: string, dx: number, dy: number) => void
   updateTheme: (patch: Partial<Theme>) => void
   addScreen: () => void
@@ -239,6 +240,28 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const l = cloneLayout(s.layout)
     l.screens[si].widgets = l.screens[si].widgets.filter(w => w.id !== widgetId)
     return { ...withHistory(s, l), selectedWidgetId: null }
+  }),
+
+  moveWidgetZ: (si, widgetId, dir) => set((s) => {
+    const l = cloneLayout(s.layout)
+    const ws = l.screens[si].widgets
+
+    // Порядок отрисовки: по z, при равных z — по позиции в массиве
+    const order = ws
+      .map((w, i) => ({ w, i }))
+      .sort((a, b) => (a.w.z ?? 0) - (b.w.z ?? 0) || a.i - b.i)
+
+    const at = order.findIndex(o => o.w.id === widgetId)
+    const to = at + dir
+    if (at < 0 || to < 0 || to >= order.length) return s
+
+    ;[order[at], order[to]] = [order[to], order[at]]
+
+    // z перенумеровываем подряд по всему экрану. Обмена двух значений мало:
+    // у соседей z нередко совпадают, и тогда обмен ничего бы не изменил.
+    order.forEach((o, k) => { o.w.z = k })
+
+    return withHistory(s, l)
   }),
 
   moveWidget: (si, widgetId, dx, dy) => set((s) => {

@@ -5,8 +5,6 @@
  * но при этом не вылезать за неё по ширине (длинное число в узком виджете).
  */
 
-import { EM_LADDER_BOLD, isDeviceMode } from './deviceFont'
-
 /**
  * Возвращает размер шрифта (px), при котором текст влезает и по высоте, и по ширине.
  *
@@ -33,14 +31,6 @@ export function fitFontSize(
 
   if (measured > maxW && measured > 0) {
     size = Math.floor(size * (maxW / measured))
-  }
-
-  // В режиме устройства подогнанный размер тоже обязан лежать на лестнице
-  // достижимых кеглей — иначе автоподгонка снова разойдётся с прошивкой.
-  // Прижимаем вниз: подняться нельзя, текст вылезет из рамки.
-  if (isDeviceMode()) {
-    const ladder = EM_LADDER_BOLD.filter(v => v <= size)
-    size = ladder.length ? ladder[ladder.length - 1] : EM_LADDER_BOLD[0]
   }
 
   return Math.max(minPx, size)

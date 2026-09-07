@@ -49,20 +49,46 @@ function computeRPM(t: number): number {
   }
 }
 
-// ─── Педаль тормоза — реалистичная симуляция трек-заезда ─────────────────────
+// ─── Педали ──────────────────────────────────────────────────────────────────
 
-function computeBrake(rpm: number, t: number): number {
+/// Пик торможения в конце цикла и он же — точка, с которой начинается отпуск
+/// на выходе из поворота. Одно значение на оба конца делает кривую непрерывной
+/// на стыке циклов.
+const BRAKE_PEAK    = 0.9
+const BRAKE_RELEASE = 1.2   // с, отпускание тормоза на выходе из поворота
+const THROTTLE_OPEN = 0.5   // с, момент начала подачи газа
+const THROTTLE_FULL = 2.2   // с, момент полностью открытого газа
+
+/**
+ * Положение педалей: одна плавная кривая на цикл, без дрожания.
+ *
+ * Шума здесь нет намеренно. Раньше к обеим педалям примешивались синусы 5 и
+ * 8 Гц, а газ вычислялся как `1 - тормоз`, поэтому наследовал дрожание и от
+ * тормоза, и от оборотов. При 60 кадрах в секунду это выглядело рваным.
+ * Правдоподобия шум не добавлял: датчик положения педали шумит на порядок
+ * меньше, чем видно на такой отрисовке.
+ *
+ * Фазы привязаны к тем же границам, что RPM, поэтому педали, обороты и
+ * продольная перегрузка согласованы между собой. Обе кривые собраны из
+ * smoothstep, то есть на стыках фаз производная нулевая — переломов нет.
+ */
+function computePedals(t: number): { brake: number; accel: number } {
   const phase = t % RPM_CYCLE
   const riseEnd = RPM_CYCLE - RPM_HOLD - RPM_DROP
 
+  // Конец цикла: сброс газа и торможение в зону
   if (phase >= riseEnd) {
-    // Торможение перед отсечкой/сменой передачи
-    const brakeF = smoothstep(riseEnd, riseEnd + RPM_DROP, phase)
-    return Math.min(1, brakeF * 0.85 + noise(t, 8, 0.05))
+    const k = smoothstep(riseEnd, riseEnd + RPM_DROP, phase)
+    return { brake: BRAKE_PEAK * k, accel: 1 - k }
   }
-  // Лёгкое торможение при низких оборотах (выход из поворота)
-  const idleF = 1 - smoothstep(RPM_IDLE, RPM_IDLE + 1500, rpm)
-  return Math.max(0, idleF * 0.15 + noise(t, 5, 0.02))
+
+  // Выход из поворота: тормоз плавно отпускается с пиковых значений, газ
+  // открывается с небольшим перекрытием — как на трейл-брейкинге
+  const release = smoothstep(0, BRAKE_RELEASE, phase)
+  return {
+    brake: BRAKE_PEAK * (1 - release),
+    accel: smoothstep(THROTTLE_OPEN, THROTTLE_FULL, phase),
+  }
 }
 
 // ─── Главная функция сигналов ──────────────────────────────────────────────────
@@ -93,9 +119,8 @@ export function generateSignals(t: number): SignalValues {
 
   // ── G-сила (реалистичная трек-симуляция) ────────────────────────────────────
   // Продольная: положительная при разгоне, отрицательная при торможении
-  const brake = computeBrake(rpm, t)
-  const accel = Math.max(0, 1 - brake - 0.1) * smoothstep(RPM_IDLE, 3500, rpm)
-  const longG  = accel * 0.7 - brake * 1.2 + noise(t, 4, 0.05)
+  const { brake, accel } = computePedals(t)
+  const longG = accel * 0.7 - brake * 1.2
 
   // ── Руль — единый источник для steer.pos и поперечной перегрузки ──────────
   // Физически поворот руля ПОРОЖДАЕТ боковое ускорение, поэтому оба сигнала
@@ -106,7 +131,6 @@ export function generateSignals(t: number): SignalValues {
   // Поперечная G: пропорциональна углу руля, но только на скорости
   const latG = 0.95 * steerNorm * smoothstep(40, 95, speed)
 
-  // ── Педали: плавно, без дрожания (шум убран) ─────────────────────────────
   const brakePos = Math.max(0, Math.min(1, brake))
   const accelPos = Math.max(0, Math.min(1, accel))
 

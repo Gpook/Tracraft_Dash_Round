@@ -1,156 +1,155 @@
 {
-  "schema": 1,
-  "id": "new-layout",
-  "name": "New Layout",
-  "display": {
-    "w": 466,
-    "h": 466,
-    "shape": "round",
-    "safeInset": 10
-  },
-  "theme": {
-    "bg": "#000000",
-    "fg": "#FFFFFF",
-    "accent": "#FF3B30",
-    "muted": "#6E6E73",
-    "warn": "#FFCC00",
-    "crit": "#FF3B30"
-  },
-  "screens": [
-    {
-      "id": "main",
-      "name": "main",
-      "widgets": [
-        {
-          "type": "shift_light",
-          "rect": {
-            "x": 83,
-            "y": 26,
-            "w": 300,
-            "h": 60
-          },
-          "z": 2,
-          "signal": "engine.rpm",
-          "props": {
-            "mode": "arc",
-            "stages": [
-              {
-                "at": 5000,
-                "color": "#30D158"
+    "schema":  1,
+    "id":  "new-layout",
+    "name":  "New Layout",
+    "display":  {
+                    "w":  466,
+                    "h":  466,
+                    "shape":  "round"
+                },
+    "theme":  {
+                  "bg":  "#000000",
+                  "fg":  "#FFFFFF",
+                  "accent":  "#FF3B30",
+                  "muted":  "#6E6E73",
+                  "warn":  "#FFCC00",
+                  "crit":  "#FF3B30"
               },
-              {
-                "at": 5800,
-                "color": "#34C759"
-              },
-              {
-                "at": 6200,
-                "color": "#FFCC00"
-              },
-              {
-                "at": 6600,
-                "color": "#FF9F0A"
-              },
-              {
-                "at": 7000,
-                "color": "#FF453A"
-              },
-              {
-                "at": 7200,
-                "color": "#FF3B30",
-                "blinkHz": 8
-              }
-            ]
-          },
-          "id": "shift_light-17",
-          "unit": ""
-        }
-      ]
-    },
-    {
-      "id": "screen-1",
-      "name": "driver_info",
-      "widgets": [
-        {
-          "type": "bar",
-          "rect": {
-            "x": 124,
-            "y": 28,
-            "w": 40,
-            "h": 140
-          },
-          "z": 0,
-          "signal": "pedal.brake",
-          "props": {
-            "min": 0,
-            "max": 1,
-            "orientation": "vertical",
-            "color": "#FF9F0A",
-            "trackColor": "#1C1C1E"
-          },
-          "id": "bar-11",
-          "unit": "Brake"
-        },
-        {
-          "type": "bar",
-          "rect": {
-            "x": 172,
-            "y": 28,
-            "w": 40,
-            "h": 140
-          },
-          "z": 0,
-          "signal": "pedal.accel",
-          "props": {
-            "min": 0,
-            "max": 1,
-            "orientation": "vertical",
-            "color": "#FF9F0A",
-            "trackColor": "#1C1C1E"
-          },
-          "id": "bar-12",
-          "unit": ""
-        },
-        {
-          "type": "bar",
-          "rect": {
-            "x": 236,
-            "y": 92,
-            "w": 140,
-            "h": 40
-          },
-          "z": 0,
-          "signal": "steer.pos",
-          "props": {
-            "min": 0,
-            "max": 1,
-            "orientation": "horizontal",
-            "color": "#FF9F0A",
-            "trackColor": "#1C1C1E"
-          },
-          "id": "bar-13",
-          "unit": ""
-        },
-        {
-          "type": "gforce",
-          "rect": {
-            "x": 40,
-            "y": 180,
-            "w": 360,
-            "h": 288
-          },
-          "z": 0,
-          "props": {
-            "range": 1.5,
-            "rings": 3,
-            "trail": true,
-            "signalX": "imu.ax",
-            "signalY": "imu.ay"
-          },
-          "id": "gforce-14",
-          "signal": "",
-          "unit": ""
-        }
-      ]
-    }
-  ]
+    "screens":  [
+                    {
+                        "id":  "main",
+                        "name":  "main",
+                        "widgets":  [
+                                        {
+                                            "type":  "shift_light",
+                                            "rect":  {
+                                                         "x":  83,
+                                                         "y":  26,
+                                                         "w":  300,
+                                                         "h":  60
+                                                     },
+                                            "z":  2,
+                                            "signal":  "engine.rpm",
+                                            "props":  {
+                                                          "mode":  "arc",
+                                                          "stages":  [
+                                                                         {
+                                                                             "at":  5000,
+                                                                             "color":  "#30D158"
+                                                                         },
+                                                                         {
+                                                                             "at":  5800,
+                                                                             "color":  "#34C759"
+                                                                         },
+                                                                         {
+                                                                             "at":  6200,
+                                                                             "color":  "#FFCC00"
+                                                                         },
+                                                                         {
+                                                                             "at":  6600,
+                                                                             "color":  "#FF9F0A"
+                                                                         },
+                                                                         {
+                                                                             "at":  7000,
+                                                                             "color":  "#FF453A"
+                                                                         },
+                                                                         {
+                                                                             "at":  7200,
+                                                                             "color":  "#FF3B30",
+                                                                             "blinkHz":  8
+                                                                         }
+                                                                     ]
+                                                      },
+                                            "id":  "shift_light-17",
+                                            "unit":  ""
+                                        }
+                                    ]
+                    },
+                    {
+                        "id":  "screen-1",
+                        "name":  "driver_info",
+                        "widgets":  [
+                                        {
+                                            "type":  "bar",
+                                            "rect":  {
+                                                         "x":  124,
+                                                         "y":  28,
+                                                         "w":  40,
+                                                         "h":  140
+                                                     },
+                                            "z":  0,
+                                            "signal":  "pedal.brake",
+                                            "props":  {
+                                                          "min":  0,
+                                                          "max":  1,
+                                                          "orientation":  "vertical",
+                                                          "color":  "#FF9F0A",
+                                                          "trackColor":  "#1C1C1E"
+                                                      },
+                                            "id":  "bar-11",
+                                            "unit":  "Brake"
+                                        },
+                                        {
+                                            "type":  "bar",
+                                            "rect":  {
+                                                         "x":  172,
+                                                         "y":  28,
+                                                         "w":  40,
+                                                         "h":  140
+                                                     },
+                                            "z":  0,
+                                            "signal":  "pedal.accel",
+                                            "props":  {
+                                                          "min":  0,
+                                                          "max":  1,
+                                                          "orientation":  "vertical",
+                                                          "color":  "#FF9F0A",
+                                                          "trackColor":  "#1C1C1E"
+                                                      },
+                                            "id":  "bar-12",
+                                            "unit":  ""
+                                        },
+                                        {
+                                            "type":  "bar",
+                                            "rect":  {
+                                                         "x":  236,
+                                                         "y":  92,
+                                                         "w":  140,
+                                                         "h":  40
+                                                     },
+                                            "z":  0,
+                                            "signal":  "steer.pos",
+                                            "props":  {
+                                                          "min":  0,
+                                                          "max":  1,
+                                                          "orientation":  "horizontal",
+                                                          "color":  "#FF9F0A",
+                                                          "trackColor":  "#1C1C1E"
+                                                      },
+                                            "id":  "bar-13",
+                                            "unit":  ""
+                                        },
+                                        {
+                                            "type":  "gforce",
+                                            "rect":  {
+                                                         "x":  40,
+                                                         "y":  180,
+                                                         "w":  360,
+                                                         "h":  288
+                                                     },
+                                            "z":  0,
+                                            "props":  {
+                                                          "range":  1.5,
+                                                          "rings":  3,
+                                                          "trail":  true,
+                                                          "signalX":  "imu.ax",
+                                                          "signalY":  "imu.ay"
+                                                      },
+                                            "id":  "gforce-14",
+                                            "signal":  "",
+                                            "unit":  ""
+                                        }
+                                    ]
+                    }
+                ]
 }

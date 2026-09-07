@@ -124,11 +124,20 @@ body { background: var(--bg); height: 100vh; overflow: hidden; }
 
 /* ─── Left palette ──────────────────────────────────────────────────────────── */
 
-.palette {
+/* Левая колонка: палитра сверху, слои снизу. Обе части скроллятся сами,
+   поэтому minmax(0, ...) — без него grid не даст строке сжаться. */
+.sidebar {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   background: var(--surface);
   border-right: 1px solid var(--border);
+  min-height: 0;
+}
+
+.palette {
   overflow-y: auto;
   padding: 8px 0;
+  min-height: 0;
 }
 
 .panel-title {
@@ -162,6 +171,79 @@ body { background: var(--bg); height: 100vh; overflow: hidden; }
 .palette-item:hover { background: var(--surface2); }
 .palette-icon { font-size: 15px; width: 20px; text-align: center; }
 .palette-label { font-size: 12px; }
+
+/* ─── Layers ────────────────────────────────────────────────────────────────── */
+
+.layers {
+  border-top: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 8px 0;
+  min-height: 0;
+}
+
+.layers-count {
+  font-size: 10px;
+  background: var(--surface2);
+  border-radius: 8px;
+  padding: 1px 6px;
+}
+
+.layers-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 6px 12px;
+}
+
+.layers-list { display: flex; flex-direction: column; gap: 1px; padding: 0 6px; }
+
+.layer-row {
+  display: grid;
+  grid-template-columns: 20px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.layer-row:hover { background: var(--surface2); }
+.layer-row.selected { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+
+.layer-icon { font-size: 13px; text-align: center; }
+
+.layer-title {
+  font-size: 12px;
+  /* Длинный текст лейбла не должен разрывать сетку строки */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layer-z {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Кнопки проявляются на наведении и у выбранного слоя: иначе три значка на
+   каждой строке перегружают узкую колонку. */
+.layer-actions { display: flex; gap: 1px; opacity: 0; transition: opacity 0.12s; }
+.layer-row:hover .layer-actions,
+.layer-row.selected .layer-actions { opacity: 1; }
+
+.layer-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 9px;
+  line-height: 1;
+  padding: 3px 4px;
+  border-radius: 4px;
+}
+.layer-btn:hover:not(:disabled) { background: var(--surface); color: var(--text); }
+.layer-btn:disabled { opacity: 0.25; cursor: default; }
+.layer-btn.danger:hover:not(:disabled) { background: #FF3B3033; color: #FF453A; }
 
 /* ─── Canvas area ───────────────────────────────────────────────────────────── */
 

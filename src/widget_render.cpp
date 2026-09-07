@@ -17,14 +17,51 @@ namespace {
 
 struct R { int x, y, w, h; };
 
-// Ð’Ñ‹Ñ€Ð°Ð²Ð½Ð¸Ð²Ð°Ð½Ð¸Ðµ Ð±ÐµÑ€Ñ‘Ð¼ Ð¸Ð· Ð¼Ð¾Ð´ÑƒÐ»Ñ Ñ‚ÐµÐºÑÑ‚Ð°, Ñ‡Ñ‚Ð¾Ð±Ñ‹ Ð½Ðµ Ð´ÐµÑ€Ð¶Ð°Ñ‚ÑŒ Ð´Ð²Ð° Ð¾Ð´Ð¸Ð½Ð°ÐºÐ¾Ð²Ñ‹Ñ… enum
+// Выравнивание берём из модуля текста, чтобы не держать два одинаковых enum
 using VA = Text::VA;
 
 float clampf(float v, float lo, float hi) {
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
-// â”€â”€â”€ Ð”Ð¾ÑÑ‚ÑƒÐ¿ Ðº Ð¿Ñ€Ð¾Ð¿Ð°Ð¼ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/**
+ * Какую часть виджета рисовать.
+ *
+ * Разделение на слои работает с точностью до виджета, и для крупных виджетов
+ * этого мало. У радара G-force диск, кольца и подписи от сигналов не зависят,
+ * но перерисовывались каждый кадр вместе с шариком — одна заливка диска это
+ * 106 тысяч пикселей. То же у графика с сеткой.
+ *
+ * Такие виджеты рисуются в двух проходах: неподвижная оправа уходит в
+ * статический слой, живая часть рисуется поверх неё каждый кадр.
+ */
+enum class Part : uint8_t {
+    All,     ///< всё сразу — свайп и виджеты без разделения
+    Chrome,  ///< только неподвижная оправа
+    Live,    ///< только то, что меняется от кадра к кадру
+};
+
+/// Объединяющий прямоугольник. Пустые (w или h <= 0) игнорируются.
+R unite(const R& a, const R& b) {
+    if (a.w <= 0 || a.h <= 0) return b;
+    if (b.w <= 0 || b.h <= 0) return a;
+    const int x0 = a.x < b.x ? a.x : b.x;
+    const int y0 = a.y < b.y ? a.y : b.y;
+    const int x1 = (a.x + a.w) > (b.x + b.w) ? (a.x + a.w) : (b.x + b.w);
+    const int y1 = (a.y + a.h) > (b.y + b.h) ? (a.y + a.h) : (b.y + b.h);
+    return R{x0, y0, x1 - x0, y1 - y0};
+}
+
+/// Пересечение прямоугольника с рамкой. Возвращает пустой, если не пересекся.
+R clipTo(const R& a, const R& bounds) {
+    const int x0 = a.x > bounds.x ? a.x : bounds.x;
+    const int y0 = a.y > bounds.y ? a.y : bounds.y;
+    const int x1 = (a.x + a.w) < (bounds.x + bounds.w) ? (a.x + a.w) : (bounds.x + bounds.w);
+    const int y1 = (a.y + a.h) < (bounds.y + bounds.h) ? (a.y + a.h) : (bounds.y + bounds.h);
+    return (x1 > x0 && y1 > y0) ? R{x0, y0, x1 - x0, y1 - y0} : R{0, 0, 0, 0};
+}
+
+// ─── Доступ к пропам ─────────────────────────────────────────────────────────
 
 float pF(JsonObjectConst p, const char* k, float d) { return p[k] | d; }
 int   pI(JsonObjectConst p, const char* k, int d)   { return p[k] | d; }
@@ -39,7 +76,7 @@ uint16_t pC(JsonObjectConst p, const char* k, uint16_t d) {
     return rgb565FromHex(p[k] | static_cast<const char*>(nullptr), d);
 }
 
-/// Ð¦Ð²ÐµÑ‚ Ð·Ð¾Ð½Ñ‹, Ð² ÐºÐ¾Ñ‚Ð¾Ñ€ÑƒÑŽ Ð¿Ð¾Ð¿Ð°Ð´Ð°ÐµÑ‚ Ð·Ð½Ð°Ñ‡ÐµÐ½Ð¸Ðµ.
+/// Цвет зоны, в которую попадает значение.
 uint16_t zoneColor(JsonArrayConst zones, float v, uint16_t fallback) {
     for (JsonObjectConst z : zones) {
         const float from = z["from"] | -1.0e30f;
@@ -51,13 +88,13 @@ uint16_t zoneColor(JsonArrayConst zones, float v, uint16_t fallback) {
     return fallback;
 }
 
-// â”€â”€â”€ Ð¢ÐµÐºÑÑ‚ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Текст ───────────────────────────────────────────────────────────────────
 //
-// Ð Ð°Ð·Ð¼ÐµÑ€ Ð²ÐµÐ·Ð´Ðµ Ð·Ð°Ð´Ð°Ñ‘Ñ‚ÑÑ Ð²Ñ‹ÑÐ¾Ñ‚Ð¾Ð¹ Ñ†Ð¸Ñ„Ñ€ Ð² Ð¿Ð¸ÐºÑÐµÐ»ÑÑ… â€” Ñ‚Ð¾Ð¹ Ð¶Ðµ Ð²ÐµÐ»Ð¸Ñ‡Ð¸Ð½Ð¾Ð¹, Ñ‡Ñ‚Ð¾ Ð¸
-// fontSize Ð² Ñ€ÐµÐ´Ð°ÐºÑ‚Ð¾Ñ€Ðµ. ÐœÐ¾Ð´ÑƒÐ»ÑŒ Text Ð¿Ñ€Ð¸Ð¶Ð¸Ð¼Ð°ÐµÑ‚ ÐµÑ‘ Ðº Ð±Ð»Ð¸Ð¶Ð°Ð¹ÑˆÐµÐ¹ Ð´Ð¾ÑÑ‚ÑƒÐ¿Ð½Ð¾Ð¹
-// ÑÑ‚ÑƒÐ¿ÐµÐ½Ð¸, Ð¿Ð¾Ñ‚Ð¾Ð¼Ñƒ Ñ‡Ñ‚Ð¾ Ð³Ð»Ð¸Ñ„Ñ‹ ÑÑ‚Ð¾ Ð±Ð¸Ñ‚Ð¼Ð°Ð¿Ñ‹ Ð¸ Ð¼Ð°ÑÑˆÑ‚Ð°Ð±Ð¸Ñ€ÑƒÑŽÑ‚ÑÑ Ñ‚Ð¾Ð»ÑŒÐºÐ¾ Ñ†ÐµÐ»Ñ‹Ð¼.
+// Размер везде задаётся высотой цифр в пикселях — той же величиной, что и
+// fontSize в редакторе. Модуль Text прижимает её к ближайшей доступной
+// ступени, потому что глифы это битмапы и масштабируются только целым.
 
-/// Ð’Ñ‹ÑÐ¾Ñ‚Ð° Ñ†Ð¸Ñ„Ñ€, Ð¿Ñ€Ð¸ ÐºÐ¾Ñ‚Ð¾Ñ€Ð¾Ð¹ ÑÑ‚Ñ€Ð¾ÐºÐ° Ð²Ð¿Ð¸ÑÑ‹Ð²Ð°ÐµÑ‚ÑÑ Ð² Ð±Ð¾ÐºÑ.
+/// Высота цифр, при которой строка вписывается в бокс.
 int fitPx(const char* s, int maxW, int maxH, bool bold = true) {
     return Text::capPx(Text::fit(s, maxW, maxH, bold));
 }
@@ -74,36 +111,49 @@ void drawBoxText(Arduino_GFX* g, const char* s, int bx, int by, int bw, int bh,
     if (!s || !*s) return;
     g->setTextWrap(false);
     Text::drawBox(g, s, bx, by, bw, bh, alignOf(align), va,
-                  Text::pick(px, bold), color);
+                  Text::pick(s, px, bold), color);
 }
 
 void drawCenteredText(Arduino_GFX* g, const char* s, int cx, int cy,
                       int px, uint16_t color, bool bold = true) {
     if (!s || !*s) return;
     g->setTextWrap(false);
-    Text::drawCentered(g, s, cx, cy, Text::pick(px, bold), color);
+    Text::drawCentered(g, s, cx, cy, Text::pick(s, px, bold), color);
 }
 
-/// ÐŸÐ¾Ð»ÑƒÐ¿Ñ€Ð¾Ð·Ñ€Ð°Ñ‡Ð½Ð°Ñ Ð·Ð°Ð»Ð¸Ð²ÐºÐ° Ð¿Ð¾Ð²ÐµÑ€Ñ… Ð³Ð¾Ñ‚Ð¾Ð²Ð¾Ð³Ð¾ ÐºÐ°Ð´Ñ€Ð°.
+/**
+ * Тронут ли кадр за пределами рамок виджетов.
+ *
+ * Сбрасывается перед каждым проходом отрисовки и поднимается заливками во всю
+ * площадь. Раньше факт оверлея угадывался по типу виджета: если на экране есть
+ * Warning, кадр считался испорченным всегда. Из-за этого на таком экране
+ * каждый кадр шли restoreAll() и полная отправка, и двухслойная композиция не
+ * давала ничего — а Warning стоит почти на каждом экране.
+ */
+bool s_overlayDrawn = false;
+
+/// Полупрозрачная заливка поверх готового кадра.
 ///
-/// Ð’ Arduino_GFX Ð½ÐµÑ‚ Ð°Ð»ÑŒÑ„Ð°-ÐºÐ°Ð½Ð°Ð»Ð°, Ð¿Ð¾ÑÑ‚Ð¾Ð¼Ñƒ ÑÐ¼ÐµÑˆÐ¸Ð²Ð°ÐµÐ¼ Ð¿Ð¸ÐºÑÐµÐ»Ð¸ Ñ„Ñ€ÐµÐ¹Ð¼Ð±ÑƒÑ„ÐµÑ€Ð°
-/// Ð½Ð°Ð¿Ñ€ÑÐ¼ÑƒÑŽ. 217k Ð¿Ð¸ÐºÑÐµÐ»ÐµÐ¹ â€” Ð·Ð°Ð¼ÐµÑ‚Ð½Ð°Ñ Ñ†ÐµÐ½Ð°, Ð¿Ð¾ÑÑ‚Ð¾Ð¼Ñƒ Ð²Ñ‹Ð·Ñ‹Ð²Ð°ÐµÑ‚ÑÑ Ñ‚Ð¾Ð»ÑŒÐºÐ¾ ÐºÐ¾Ð³Ð´Ð°
-/// Ð¾Ð²ÐµÑ€Ð»ÐµÐ¹ Ñ€ÐµÐ°Ð»ÑŒÐ½Ð¾ Ð²Ð¸Ð´ÐµÐ½ (Warning, shift-light flash).
+/// В Arduino_GFX нет альфа-канала, поэтому смешиваем пиксели фреймбуфера
+/// напрямую. 217k пикселей — заметная цена, поэтому вызывается только когда
+/// оверлей реально виден (Warning, shift-light flash).
 void tintScreen(uint16_t color, float amount) {
     uint16_t* fb = Display::framebuffer();
     if (!fb) return;
+    s_overlayDrawn = true;
     const size_t n = static_cast<size_t>(LCD_WIDTH) * LCD_HEIGHT;
     for (size_t i = 0; i < n; ++i) fb[i] = blend565(fb[i], color, amount);
 }
 
-/// Ð—Ð°Ñ‚ÐµÐ¼Ð½ÐµÐ½Ð¸Ðµ ÐºÐ°Ð´Ñ€Ð° Ð½Ð° Ñ†ÐµÐ»Ð¾Ñ‡Ð¸ÑÐ»ÐµÐ½Ð½Ð¾Ð¹ Ð°Ñ€Ð¸Ñ„Ð¼ÐµÑ‚Ð¸ÐºÐµ.
+/// Затемнение кадра на целочисленной арифметике.
 ///
-/// keep256 â€” ÑÐºÐ¾Ð»ÑŒÐºÐ¾ ÑÑ€ÐºÐ¾ÑÑ‚Ð¸ Ð¾ÑÑ‚Ð°Ð²Ð¸Ñ‚ÑŒ, Ð² 1/256 Ð´Ð¾Ð»ÑÑ…: 179 ÑÑ‚Ð¾ Ð¿Ñ€Ð¸Ð¼ÐµÑ€Ð½Ð¾ 70%,
-/// Ñ‚Ð¾ ÐµÑÑ‚ÑŒ Ð·Ð°Ñ‚ÐµÐ¼Ð½ÐµÐ½Ð¸Ðµ Ð½Ð° 30% ÐºÐ°Ðº Ð² Ñ€ÐµÐ´Ð°ÐºÑ‚Ð¾Ñ€Ðµ. ÐŸÐ»Ð°Ð²Ð°ÑŽÑ‰ÐµÐ¹ Ñ‚Ð¾Ñ‡ÐºÐ¸ Ð½ÐµÑ‚ ÑÐ¿ÐµÑ†Ð¸Ð°Ð»ÑŒÐ½Ð¾:
-/// Ð¿Ñ€Ð¾Ñ…Ð¾Ð´ Ð¸Ð´Ñ‘Ñ‚ Ð¿Ð¾ 217k Ð¿Ð¸ÐºÑÐµÐ»ÐµÐ¹ ÐºÐ°Ð¶Ð´Ñ‹Ð¹ ÐºÐ°Ð´Ñ€, Ð¿Ð¾ÐºÐ° Ð¾Ð²ÐµÑ€Ð»ÐµÐ¹ Ð²Ð¸Ð´ÐµÐ½.
+/// keep256 — сколько яркости оставить, в 1/256 долях: 179 это примерно 70%,
+/// то есть затемнение на 30% как в редакторе. Плавающей точки нет специально:
+/// проход идёт по 217k пикселей каждый кадр, пока оверлей виден.
 void dimScreen(uint16_t keep256) {
     uint16_t* fb = Display::framebuffer();
     if (!fb) return;
+    s_overlayDrawn = true;
     const size_t n = static_cast<size_t>(LCD_WIDTH) * LCD_HEIGHT;
     for (size_t i = 0; i < n; ++i) {
         const uint16_t c = fb[i];
@@ -114,11 +164,11 @@ void dimScreen(uint16_t keep256) {
     }
 }
 
-/// Ð—Ð½Ð°Ðº Ð°Ð²Ð°Ñ€Ð¸Ð¸: Ñ‚Ñ€ÐµÑƒÐ³Ð¾Ð»ÑŒÐ½Ð¸Ðº Ñ Ð²Ð¾ÑÐºÐ»Ð¸Ñ†Ð°Ñ‚ÐµÐ»ÑŒÐ½Ñ‹Ð¼ Ð·Ð½Ð°ÐºÐ¾Ð¼, Ð½Ð°Ñ€Ð¸ÑÐ¾Ð²Ð°Ð½Ð½Ñ‹Ð¹ Ð²ÐµÐºÑ‚Ð¾Ñ€Ð¾Ð¼.
+/// Знак аварии: треугольник с восклицательным знаком, нарисованный вектором.
 ///
-/// Ð’ Ñ€ÐµÐ´Ð°ÐºÑ‚Ð¾Ñ€Ðµ Ð½Ð° ÑÑ‚Ð¾Ð¼ Ð¼ÐµÑÑ‚Ðµ ÑÑ‚Ð¾ÑÐ» emoji, Ð½Ð¾ Ð²Ð¾ Ð²ÑÑ‚Ñ€Ð¾ÐµÐ½Ð½Ñ‹Ñ… ÑˆÑ€Ð¸Ñ„Ñ‚Ð°Ñ… ÐµÐ³Ð¾ Ð½ÐµÑ‚ Ð¸
-/// Ð±Ñ‹Ñ‚ÑŒ Ð½Ðµ Ð¼Ð¾Ð¶ÐµÑ‚. ÐŸÐ¾ÑÑ‚Ð¾Ð¼Ñƒ Ð¸ÐºÐ¾Ð½ÐºÐ° Ñ€Ð¸ÑÑƒÐµÑ‚ÑÑ Ð¿Ñ€Ð¸Ð¼Ð¸Ñ‚Ð¸Ð²Ð°Ð¼Ð¸ â€” Ð¸ Ñ€ÐµÐ´Ð°ÐºÑ‚Ð¾Ñ€ Ð¿ÐµÑ€ÐµÐ²ÐµÐ´Ñ‘Ð½
-/// Ð½Ð° Ñ‚Ð°ÐºÑƒÑŽ Ð¶Ðµ Ð¾Ñ‚Ñ€Ð¸ÑÐ¾Ð²ÐºÑƒ, Ñ‡Ñ‚Ð¾Ð±Ñ‹ Ð²Ð¸Ð´ ÑÐ¾Ð²Ð¿Ð°Ð´Ð°Ð».
+/// В редакторе на этом месте стоял emoji, но во встроенных шрифтах его нет и
+/// быть не может. Поэтому иконка рисуется примитивами — и редактор переведён
+/// на такую же отрисовку, чтобы вид совпадал.
 void drawWarnTriangle(Arduino_GFX* g, int cx, int cy, int size, uint16_t fg, uint16_t bg) {
     const int h  = size;
     const int w  = static_cast<int>(size * 1.15f);
@@ -128,46 +178,19 @@ void drawWarnTriangle(Arduino_GFX* g, int cx, int cy, int size, uint16_t fg, uin
 
     g->fillTriangle(ax, ay, lx, ly, rx, ry, fg);
 
-    // Ð’Ð½ÑƒÑ‚Ñ€ÐµÐ½Ð½Ð¸Ð¹ Ñ‚Ñ€ÐµÑƒÐ³Ð¾Ð»ÑŒÐ½Ð¸Ðº Ñ†Ð²ÐµÑ‚Ð¾Ð¼ Ñ„Ð¾Ð½Ð° Ð¿Ñ€ÐµÐ²Ñ€Ð°Ñ‰Ð°ÐµÑ‚ Ñ„Ð¸Ð³ÑƒÑ€Ñƒ Ð² ÐºÐ¾Ð½Ñ‚ÑƒÑ€
+    // Внутренний треугольник цветом фона превращает фигуру в контур
     const int inset = size / 7 > 2 ? size / 7 : 2;
     g->fillTriangle(ax, ay + inset * 2, lx + inset * 2, ly - inset,
                     rx - inset * 2, ry - inset, bg);
 
-    // Ð’Ð¾ÑÐºÐ»Ð¸Ñ†Ð°Ñ‚ÐµÐ»ÑŒÐ½Ñ‹Ð¹ Ð·Ð½Ð°Ðº
+    // Восклицательный знак
     const int barW = size / 9 > 2 ? size / 9 : 2;
     const int barH = size / 3;
     g->fillRect(cx - barW / 2, cy - barH / 3, barW, barH, fg);
     g->fillRect(cx - barW / 2, cy + barH * 2 / 3 + 2, barW, barW, fg);
 }
 
-/// Ð—Ð°Ð»Ð¸Ð²ÐºÐ° ÐºÐ¾Ð»ÑŒÑ†ÐµÐ²Ð¾Ð³Ð¾ ÑÐµÐºÑ‚Ð¾Ñ€Ð° Ñ€Ð°Ð´Ð¸Ð°Ð»ÑŒÐ½Ñ‹Ð¼Ð¸ ÑÐ¿Ð¸Ñ†Ð°Ð¼Ð¸.
-///
-/// Ð—Ð°Ð¼ÐµÐ½Ð° Arduino_GFX::fillArc: Ñ‚Ð¾Ñ‚ ÑÐºÐ°Ð½Ð¸Ñ€ÑƒÐµÑ‚ Ð’Ð•Ð¡Ð¬ Ð¾Ð¿Ð¸ÑÐ°Ð½Ð½Ñ‹Ð¹ ÐºÐ²Ð°Ð´Ñ€Ð°Ñ‚ Ñ
-/// Ð¿Ñ€Ð¾Ð²ÐµÑ€ÐºÐ°Ð¼Ð¸ Ð½Ð° float Ð² ÐºÐ°Ð¶Ð´Ð¾Ð¼ Ð¿Ð¸ÐºÑÐµÐ»Ðµ â€” Ð´Ð»Ñ ÑˆÐºÐ°Ð»Ñ‹ 450x450 ÑÑ‚Ð¾ 203k Ð¸Ñ‚ÐµÑ€Ð°Ñ†Ð¸Ð¹
-/// Ð½Ð° Ð¾Ð´Ð¸Ð½ Ð²Ñ‹Ð·Ð¾Ð², Ð¸ Ð¸Ð¼ÐµÐ½Ð½Ð¾ ÑÑ‚Ð¾ ÑÑŠÐµÐ´Ð°Ð»Ð¾ ÐºÐ°Ð´Ñ€. Ð—Ð´ÐµÑÑŒ Ñ€Ð°Ð±Ð¾Ñ‚Ð° Ð¿Ñ€Ð¾Ð¿Ð¾Ñ€Ñ†Ð¸Ð¾Ð½Ð°Ð»ÑŒÐ½Ð°
-/// ÑÐ°Ð¼Ð¾Ð¹ Ð´ÑƒÐ³Ðµ: ÑˆÐ°Ð³ Ð¿Ð¾Ð´Ð¾Ð±Ñ€Ð°Ð½ Ñ‚Ð°Ðº, Ñ‡Ñ‚Ð¾Ð±Ñ‹ ÑÐ¾ÑÐµÐ´Ð½Ð¸Ðµ ÑÐ¿Ð¸Ñ†Ñ‹ ÑÐ¼Ñ‹ÐºÐ°Ð»Ð¸ÑÑŒ Ð¿Ð¾ Ð²Ð½ÐµÑˆÐ½ÐµÐ¼Ñƒ
-/// Ñ€Ð°Ð´Ð¸ÑƒÑÑƒ, Ñ‚Ð¾ ÐµÑÑ‚ÑŒ Ð¿Ñ€Ð¸Ð¼ÐµÑ€Ð½Ð¾ Ð´Ð»Ð¸Ð½Ð°_Ð´ÑƒÐ³Ð¸ * Ñ‚Ð¾Ð»Ñ‰Ð¸Ð½Ð° Ð¿Ð¸ÐºÑÐµÐ»ÐµÐ¹.
-void fillArcSpokes(Arduino_GFX* g, int cx, int cy, int rOuter, int rInner,
-                   float aStart, float aEnd, uint16_t color) {
-    if (rOuter <= rInner || rOuter <= 0) return;
-
-    const float sweep = aEnd - aStart;
-    if (fabsf(sweep) < 0.05f) return;
-
-    // Ð”Ð»Ð¸Ð½Ð° Ð²Ð½ÐµÑˆÐ½ÐµÐ¹ Ð´ÑƒÐ³Ð¸ Ð² Ð¿Ð¸ÐºÑÐµÐ»ÑÑ… = ÑˆÐ°Ð³ Ð² Ð¾Ð´Ð¸Ð½ Ð¿Ð¸ÐºÑÐµÐ»ÑŒ
-    const int steps = static_cast<int>(ceilf(fabsf(sweep) * DEG_TO_RAD * rOuter));
-    const int n = steps < 1 ? 1 : steps;
-
-    for (int i = 0; i <= n; ++i) {
-        const float a = (aStart + sweep * i / n) * DEG_TO_RAD;
-        const float ca = cosf(a), sa = sinf(a);
-        g->drawLine(cx + static_cast<int>(ca * rInner), cy + static_cast<int>(sa * rInner),
-                    cx + static_cast<int>(ca * rOuter), cy + static_cast<int>(sa * rOuter),
-                    color);
-    }
-}
-
-// â”€â”€â”€ Ð¡Ð¾ÑÑ‚Ð¾ÑÐ½Ð¸Ðµ Ð²Ð¸Ð´Ð¶ÐµÑ‚Ð¾Ð² Ð¼ÐµÐ¶Ð´Ñƒ ÐºÐ°Ð´Ñ€Ð°Ð¼Ð¸ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Состояние виджетов между кадрами ────────────────────────────────────────
 
 constexpr uint8_t  kWarnPool     = 6;
 constexpr uint8_t  kGraphPool    = 3;
@@ -208,7 +231,7 @@ WarnState* warnState(const char* id) {
     return nullptr;
 }
 
-/// Ð¡Ð»ÐµÐ´ ÑˆÐ°Ñ€Ð¸ÐºÐ° G-force: ÐºÐ¾Ð»ÑŒÑ†ÐµÐ²Ð¾Ð¹ Ð±ÑƒÑ„ÐµÑ€ Ð¿Ð¾ÑÐ»ÐµÐ´Ð½Ð¸Ñ… Ð¿Ð¾Ð·Ð¸Ñ†Ð¸Ð¹.
+/// След шарика G-force: кольцевой буфер последних позиций.
 struct TrailState {
     char    id[kIdLen];
     bool    used;
@@ -216,6 +239,12 @@ struct TrailState {
     uint8_t filled;
     int16_t x[kTrailLen];
     int16_t y[kTrailLen];
+    /// Область, занятая шариком, следом и цифрами на предыдущем кадре.
+    ///
+    /// Нужна, чтобы восстанавливать и отправлять только её вместо всей рамки
+    /// радара. Прошлый кадр надо затереть, текущий — отправить, поэтому
+    /// liveRect() возвращает объединение прошлой области с текущей.
+    R       live = {0, 0, 0, 0};
 };
 TrailState s_trail[kTrailPool] = {};
 
@@ -228,6 +257,7 @@ TrailState* trailState(const char* id) {
             t.id[kIdLen - 1] = '\0';
             t.head = 0;
             t.filled = 0;
+            t.live = R{0, 0, 0, 0};
             return &t;
         }
     }
@@ -250,77 +280,7 @@ GraphState* graphState(const char* id) {
     return nullptr;
 }
 
-// â”€â”€â”€ arc_gauge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-void paintArcGauge(const Frame& f, JsonObjectConst w, const R& r, float value) {
-    JsonObjectConst p = w["props"];
-    auto* g = f.gfx;
-
-    const float mn = pF(p, "min", 0.0f);
-    const float mx = pF(p, "max", 100.0f);
-    if (mx - mn < 1.0e-6f) return;
-
-    const float a0   = pF(p, "startAngle", 135.0f);
-    const float a1   = pF(p, "endAngle",   405.0f);
-    const float span = a1 - a0;
-
-    const int outer = (r.w < r.h ? r.w : r.h) / 2;
-    const int thick = pI(p, "thickness", 16);
-    const int inner = (outer - thick) > 1 ? (outer - thick) : 1;
-    const int cx = r.x + r.w / 2;
-    const int cy = r.y + r.h / 2;
-
-    const uint16_t base = pC(p, "color", Layout::themeFg());
-    const uint16_t trk  = pC(p, "trackColor", 0x18E3);
-
-    fillArcSpokes(g, cx, cy, outer, inner, a0, a1, trk);
-
-    // Ð—Ð¾Ð½Ñ‹ Ð¿Ð¾Ð´ÐºÑ€Ð°ÑˆÐ¸Ð²Ð°ÑŽÑ‚ Ð´Ð¾Ñ€Ð¾Ð¶ÐºÑƒ
-    JsonArrayConst zones = p["zones"];
-    for (JsonObjectConst z : zones) {
-        const float zf = z["from"] | mn;
-        const float zt = z["to"]   | mx;
-        const float zs = a0 + span * clampf((zf - mn) / (mx - mn), 0.0f, 1.0f);
-        const float ze = a0 + span * clampf((zt - mn) / (mx - mn), 0.0f, 1.0f);
-        fillArcSpokes(g, cx, cy, outer, inner, zs, ze,
-                      rgb565FromHex(z["color"] | static_cast<const char*>(nullptr), base));
-    }
-
-    // Ð”ÑƒÐ³Ð° Ð·Ð½Ð°Ñ‡ÐµÐ½Ð¸Ñ. Ð¦Ð²ÐµÑ‚ Ð±ÐµÑ€Ñ‘Ñ‚ÑÑ Ð¸Ð· Ð·Ð¾Ð½Ñ‹, Ð² ÐºÐ¾Ñ‚Ð¾Ñ€Ð¾Ð¹ Ð½Ð°Ñ…Ð¾Ð´Ð¸Ñ‚ÑÑ Ð·Ð½Ð°Ñ‡ÐµÐ½Ð¸Ðµ:
-    // Ð½Ð° Ð¾Ñ‚ÑÐµÑ‡ÐºÐµ Ð²ÑÑ Ð´ÑƒÐ³Ð° ÑÑ‚Ð°Ð½Ð¾Ð²Ð¸Ñ‚ÑÑ ÐºÑ€Ð°ÑÐ½Ð¾Ð¹, ÑÑ‚Ð¾ Ñ‡Ð¸Ñ‚Ð°ÐµÑ‚ÑÑ Ð¼Ð³Ð½Ð¾Ð²ÐµÐ½Ð½Ð¾.
-    const float n  = clampf((value - mn) / (mx - mn), 0.0f, 1.0f);
-    fillArcSpokes(g, cx, cy, outer, inner, a0, a0 + span * n, zoneColor(zones, value, base));
-
-    // Ð Ð¸ÑÐºÐ¸ Ð¸ Ð¿Ð¾Ð´Ð¿Ð¸ÑÐ¸
-    JsonObjectConst t = p["ticks"];
-    const float major = t["major"] | 0.0f;
-    if (major > 0.0f) {
-        const bool  labels = t["labels"] | false;
-        const float div    = t["labelDivisor"] | 1.0f;
-        const uint16_t mut = Layout::themeMuted();
-
-        for (float v = mn; v <= mx + 0.001f; v += major) {
-            const float rad = (a0 + span * (v - mn) / (mx - mn)) * DEG_TO_RAD;
-            const float ca = cosf(rad), sa = sinf(rad);
-
-            const int t1 = inner - 2;
-            const int t2 = inner - 9;
-            g->drawLine(cx + static_cast<int>(ca * t1), cy + static_cast<int>(sa * t1),
-                        cx + static_cast<int>(ca * t2), cy + static_cast<int>(sa * t2), mut);
-
-            if (labels) {
-                char buf[12];
-                snprintf(buf, sizeof buf, "%g", v / (div > 0.0f ? div : 1.0f));
-                const int lr = inner - 22;
-                drawCenteredText(g, buf,
-                                 cx + static_cast<int>(ca * lr),
-                                 cy + static_cast<int>(sa * lr), 13, mut, false);
-            }
-        }
-    }
-}
-
-// â”€â”€â”€ numeric â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── numeric ─────────────────────────────────────────────────────────────────
 
 void paintNumeric(const Frame& f, JsonObjectConst w, const R& r, float value) {
     JsonObjectConst p = w["props"];
@@ -341,7 +301,7 @@ void paintNumeric(const Frame& f, JsonObjectConst w, const R& r, float value) {
     const bool hasCap  = caption && *caption;
     const bool hasUnit = showUnit && unit && *unit;
 
-    // Ð Ð°Ð·Ð¼ÐµÑ€ Ð·Ð½Ð°Ñ‡ÐµÐ½Ð¸Ñ: ÑÐ²Ð½Ñ‹Ð¹ fontSize Ð»Ð¸Ð±Ð¾ Ð°Ð²Ñ‚Ð¾Ð¿Ð¾Ð´Ð³Ð¾Ð½ÐºÐ° â€” ÐºÐ°Ðº Ð² Ñ€ÐµÐ´Ð°ÐºÑ‚Ð¾Ñ€Ðµ
+    // Размер значения: явный fontSize либо автоподгонка — как в редакторе
     const float fontSize = pF(p, "fontSize", 0.0f);
     int vs;
     if (fontSize > 0.0f) {
@@ -353,7 +313,7 @@ void paintNumeric(const Frame& f, JsonObjectConst w, const R& r, float value) {
         vs = fitPx(val, static_cast<int>(r.w * 0.94f), availH > 1 ? availH : 1);
     }
 
-    // ÐŸÐ¾Ð´Ð¿Ð¸ÑÐ¸ Ð¿Ñ€Ð¾Ð¿Ð¾Ñ€Ñ†Ð¸Ð¾Ð½Ð°Ð»ÑŒÐ½Ñ‹ Ð·Ð½Ð°Ñ‡ÐµÐ½Ð¸ÑŽ, Ñ‡Ñ‚Ð¾Ð±Ñ‹ Ð²Ð¸Ð´Ð¶ÐµÑ‚ Ñ€Ð¾Ñ Ñ†ÐµÐ»Ð¸ÐºÐ¾Ð¼
+    // Подписи пропорциональны значению, чтобы виджет рос целиком
     const int      ss   = vs * 30 / 100 < 10 ? 10 : vs * 30 / 100;
     const int      capH = hasCap  ? ss + 4 : 0;
     const int      uniH = hasUnit ? ss + 4 : 0;
@@ -368,7 +328,7 @@ void paintNumeric(const Frame& f, JsonObjectConst w, const R& r, float value) {
     }
 }
 
-// â”€â”€â”€ label â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── label ───────────────────────────────────────────────────────────────────
 
 void paintLabel(const Frame& f, JsonObjectConst w, const R& r) {
     JsonObjectConst p = w["props"];
@@ -384,7 +344,7 @@ void paintLabel(const Frame& f, JsonObjectConst w, const R& r) {
                 pC(p, "color", Layout::themeFg()));
 }
 
-// â”€â”€â”€ bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── bar ─────────────────────────────────────────────────────────────────────
 
 void paintBar(const Frame& f, JsonObjectConst w, const R& r, float value) {
     JsonObjectConst p = w["props"];
@@ -409,17 +369,17 @@ void paintBar(const Frame& f, JsonObjectConst w, const R& r, float value) {
     }
 }
 
-// â”€â”€â”€ steering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── steering ────────────────────────────────────────────────────────────────
 
 void paintSteering(const Frame& f, JsonObjectConst w, const R& r, float pos) {
     JsonObjectConst p = w["props"];
     auto* g = f.gfx;
 
-    // -1 Ð²Ð»ÐµÐ²Ð¾ â€¦ 0 Ñ†ÐµÐ½Ñ‚Ñ€ â€¦ +1 Ð²Ð¿Ñ€Ð°Ð²Ð¾
+    // -1 влево … 0 центр … +1 вправо
     float n = clampf((pos - 0.5f) * 2.0f, -1.0f, 1.0f);
 
-    // Ð—Ð¾Ð½Ð° Ð½ÐµÑ‡ÑƒÐ²ÑÑ‚Ð²Ð¸Ñ‚ÐµÐ»ÑŒÐ½Ð¾ÑÑ‚Ð¸: Ð¾ÑÑ‚Ð°Ñ‚Ð¾Ðº Ð´Ð¸Ð°Ð¿Ð°Ð·Ð¾Ð½Ð° Ñ€Ð°ÑÑ‚ÑÐ³Ð¸Ð²Ð°ÐµÑ‚ÑÑ Ð¾Ð±Ñ€Ð°Ñ‚Ð½Ð¾ Ð½Ð° 0..1,
-    // Ð¸Ð½Ð°Ñ‡Ðµ Ð¿Ð¾Ð»Ð¾ÑÐ° Ñ‚ÐµÑ€ÑÐ»Ð° Ð±Ñ‹ Ñ‡Ð°ÑÑ‚ÑŒ Ñ…Ð¾Ð´Ð° Ð¸ Ð½Ðµ Ð´Ð¾Ñ…Ð¾Ð´Ð¸Ð»Ð° Ð´Ð¾ ÐºÑ€Ð°Ñ
+    // Зона нечувствительности: остаток диапазона растягивается обратно на 0..1,
+    // иначе полоса теряла бы часть хода и не доходила до края
     const float dz = pF(p, "deadzone", 0.0f);
     if (dz > 0.0f && dz < 1.0f) {
         const float mag = fabsf(n);
@@ -441,7 +401,7 @@ void paintSteering(const Frame& f, JsonObjectConst w, const R& r, float pos) {
                          pC(p, "color", Layout::themeFg()));
     }
 
-    // Ð Ð¸ÑÐºÐ° Ñ†ÐµÐ½Ñ‚Ñ€Ð° Ð¿Ð¾Ð²ÐµÑ€Ñ… Ð·Ð°Ð¿Ð¾Ð»Ð½ÐµÐ½Ð¸Ñ â€” Ð½Ð¾Ð»ÑŒ Ð²Ð¸Ð´ÐµÐ½ Ð¿Ñ€Ð¸ Ð»ÑŽÐ±Ð¾Ð¼ Ð¾Ñ‚ÐºÐ»Ð¾Ð½ÐµÐ½Ð¸Ð¸
+    // Риска центра поверх заполнения — ноль виден при любом отклонении
     if (pB(p, "centerMark", true)) {
         g->fillRect(r.x + halfW - 1, r.y, 2, barH, 0xBDF7);
     }
@@ -456,7 +416,37 @@ void paintSteering(const Frame& f, JsonObjectConst w, const R& r, float pos) {
     }
 }
 
-// â”€â”€â”€ shift_light â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── shift_light ─────────────────────────────────────────────────────────────
+
+/// Дуга режима arc. Значения совпадают с paintShiftLight.ts — менять только
+/// вместе с редактором, иначе точки снова разъедутся.
+constexpr float kArcPad   = 2.0f;
+constexpr float kArcStart = -170.0f * PI / 180.0f;
+constexpr float kArcEnd   =  -10.0f * PI / 180.0f;
+/// Цвет неактивной точки (#2C2C2E из редактора), кладётся с alpha 0.10
+constexpr uint16_t kArcTrack = 0x2965;
+
+/// Длина эллиптической дуги, численно. Тот же метод и то же число шагов, что
+/// в редакторе: количество точек считается из этой длины, и другая формула
+/// дала бы другое количество.
+float ellipseArcLen(float a, float b, float t1, float t2) {
+    // Полуоси зависят только от рамки, а она за кадр не меняется. Считаем
+    // один раз: иначе это 128 вызовов cos/sin на каждый кадр.
+    static float sA = -1.0f, sB = -1.0f, sLen = 0.0f;
+    if (a == sA && b == sB) return sLen;
+
+    constexpr int kSteps = 64;
+    float len = 0.0f;
+    for (int i = 0; i < kSteps; ++i) {
+        const float ta = t1 + (t2 - t1) * i / kSteps;
+        const float tb = t1 + (t2 - t1) * (i + 1) / kSteps;
+        const float dx = a * (cosf(tb) - cosf(ta));
+        const float dy = b * (sinf(tb) - sinf(ta));
+        len += sqrtf(dx * dx + dy * dy);
+    }
+    sA = a; sB = b; sLen = len;
+    return len;
+}
 
 void paintShiftLight(const Frame& f, JsonObjectConst w, const R& r, float rpm) {
     JsonObjectConst p = w["props"];
@@ -468,7 +458,7 @@ void paintShiftLight(const Frame& f, JsonObjectConst w, const R& r, float rpm) {
 
     const char* mode = pS(p, "mode", "segments");
 
-    // ÐœÐ¸Ð³Ð°Ð½Ð¸Ðµ Ð¿Ð¾ÑÐ»ÐµÐ´Ð½ÐµÐ¹ ÑÑ‚ÑƒÐ¿ÐµÐ½Ð¸ Ð½Ð° Ð¾Ñ‚ÑÐµÑ‡ÐºÐµ
+    // Мигание последней ступени на отсечке
     auto blinkOn = [&](JsonObjectConst st) -> bool {
         const float hz = st["blinkHz"] | 0.0f;
         if (hz <= 0.0f) return true;
@@ -476,7 +466,7 @@ void paintShiftLight(const Frame& f, JsonObjectConst w, const R& r, float rpm) {
     };
 
     if (strcmp(mode, "flash") == 0) {
-        // ÐŸÐ¾Ð»Ð½Ð¾ÑÐºÑ€Ð°Ð½Ð½Ð°Ñ Ð²ÑÐ¿Ñ‹ÑˆÐºÐ° Ð¿Ñ€Ð¸ Ð´Ð¾ÑÑ‚Ð¸Ð¶ÐµÐ½Ð¸Ð¸ Ð¿Ð¾ÑÐ»ÐµÐ´Ð½ÐµÐ¹ ÑÑ‚ÑƒÐ¿ÐµÐ½Ð¸
+        // Полноэкранная вспышка при достижении последней ступени
         JsonObjectConst last = stages[n - 1];
         if (rpm >= (last["at"] | 0.0f) && blinkOn(last)) {
             tintScreen(rgb565FromHex(last["color"] | static_cast<const char*>(nullptr), 0xF800), 0.45f);
@@ -485,28 +475,59 @@ void paintShiftLight(const Frame& f, JsonObjectConst w, const R& r, float rpm) {
     }
 
     if (strcmp(mode, "arc") == 0) {
-        // Ð¢Ð¾Ñ‡ÐºÐ¸ Ð¿Ð¾ Ð´ÑƒÐ³Ðµ Ð²Ð½ÑƒÑ‚Ñ€Ð¸ Ñ€Ð°Ð¼ÐºÐ¸
-        const int dotSize = pI(p, "dotSize", 0);
-        const int dr = dotSize > 0 ? dotSize / 2 : (r.h < r.w / (2 * n) ? r.h / 2 : r.w / (4 * n));
-        const int rx = r.w / 2 - dr;
-        const int ry = r.h - dr;
-        const int cx = r.x + r.w / 2;
-        const int cy = r.y + r.h - dr;
+        // Геометрия и количество точек — по формулам paintShiftLight.ts.
+        // Раньше здесь рисовалось ровно stages.size() точек по полуокружности
+        // от 180 до 360 градусов, из-за чего на устройстве точек было в разы
+        // меньше и лежали они по другой кривой, чем в редакторе.
+        const float ea  = (r.w / 2.0f - kArcPad) * 0.97f;   // полуось X
+        const float eb  = (r.h > 8 ? r.h : 8) * 0.92f;      // полуось Y
+        const float ecx = r.x + r.w / 2.0f;
+        const float ecy = r.y + static_cast<float>(r.h);    // центр у нижнего края
 
-        for (int i = 0; i < n; ++i) {
-            JsonObjectConst st = stages[i];
-            const bool lit = rpm >= (st["at"] | 0.0f) && blinkOn(st);
-            const float a = PI + PI * (n == 1 ? 0.5f : static_cast<float>(i) / (n - 1));
-            const int dx = cx + static_cast<int>(cosf(a) * rx);
-            const int dy = cy + static_cast<int>(sinf(a) * ry);
-            g->fillCircle(dx, dy, dr > 1 ? dr : 1,
-                          lit ? rgb565FromHex(st["color"] | static_cast<const char*>(nullptr), 0xFFFF)
-                              : 0x18E3);
+        const int   dotSize = pI(p, "dotSize", 0);
+        // dotSize из редактора — это радиус, а не диаметр
+        const float autoR = clampf(r.h * 0.40f, 3.0f, 12.0f);
+        const float dotR  = dotSize > 0 ? static_cast<float>(dotSize) : autoR;
+
+        const float arcLen = ellipseArcLen(ea, eb, kArcStart, kArcEnd);
+        int dotCount = static_cast<int>(arcLen / (dotR * 2.0f + dotR * 0.6f));
+        if (dotCount > 30) dotCount = 30;
+        if (dotCount < n)  dotCount = n;
+
+        // Заполнение линейное по диапазону ступеней, а не «точка на ступень»
+        const float vMin = stages[0]["at"] | 0.0f;
+        const float vMax = stages[n - 1]["at"] | 0.0f;
+        const float frac = clampf((rpm - vMin) / (vMax - vMin + 1.0f), 0.0f, 1.0f);
+        const int   litCount = static_cast<int>(lroundf(frac * dotCount));
+
+        // На отсечке мигают все точки разом, а не последняя ступень
+        const bool allLit  = rpm >= vMax;
+        const bool flashOn = blinkOn(stages[n - 1]);
+
+        const int ir = static_cast<int>(lroundf(dotR)) > 1
+                     ? static_cast<int>(lroundf(dotR)) : 1;
+
+        for (int i = 0; i < dotCount; ++i) {
+            const float t = dotCount > 1 ? static_cast<float>(i) / (dotCount - 1) : 0.0f;
+            const float ang = kArcStart + t * (kArcEnd - kArcStart);
+            const int dx = static_cast<int>(lroundf(ecx + ea * cosf(ang)));
+            const int dy = static_cast<int>(lroundf(ecy + eb * sinf(ang)));
+
+            const int stageIdx = (i * n / dotCount) < n - 1 ? (i * n / dotCount) : n - 1;
+            const uint16_t col = rgb565FromHex(
+                stages[stageIdx]["color"] | static_cast<const char*>(nullptr), 0xFFFF);
+
+            uint16_t fill;
+            if (allLit)          fill = flashOn ? col : blend565(f.bg, col, 0.05f);
+            else if (i < litCount) fill = col;
+            else                 fill = blend565(f.bg, kArcTrack, 0.10f);
+
+            g->fillCircle(dx, dy, ir, fill);
         }
         return;
     }
 
-    // segments (Ð¿Ð¾ ÑƒÐ¼Ð¾Ð»Ñ‡Ð°Ð½Ð¸ÑŽ)
+    // segments (по умолчанию)
     const int gap  = 3;
     const int segW = (r.w - gap * (n - 1)) / n;
     if (segW <= 0) return;
@@ -520,7 +541,7 @@ void paintShiftLight(const Frame& f, JsonObjectConst w, const R& r, float rpm) {
     }
 }
 
-// â”€â”€â”€ warning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── warning ─────────────────────────────────────────────────────────────────
 
 void paintWarning(const Frame& f, JsonObjectConst w, const R& /*r*/) {
     JsonObjectConst p = w["props"];
@@ -530,7 +551,7 @@ void paintWarning(const Frame& f, JsonObjectConst w, const R& /*r*/) {
     WarnState* st = warnState(id);
     if (!st) return;
 
-    // Ð£ÑÐ»Ð¾Ð²Ð¸Ðµ ÑÑ€Ð°Ð±Ð°Ñ‚Ñ‹Ð²Ð°Ð½Ð¸Ñ: Ð¿Ð¾Ñ€Ð¾Ð³Ð¸ Ð¸Ð· Ñ€ÐµÐ´Ð°ÐºÑ‚Ð¾Ñ€Ð° Ð»Ð¸Ð±Ð¾ when{} Ð¸Ð· ÑÑ…ÐµÐ¼Ñ‹
+    // Условие срабатывания: пороги из редактора либо when{} из схемы
     bool triggered = false;
     float shown = 0.0f;
 
@@ -553,27 +574,27 @@ void paintWarning(const Frame& f, JsonObjectConst w, const R& /*r*/) {
     }
 
     const uint32_t now = millis();
-    if (triggered) st->showUntilMs = now + 2000;   // Ð°Ð²Ñ‚Ð¾Ð¿Ñ€Ð¾Ð¿Ð°Ð´Ð°Ð½Ð¸Ðµ Ñ‡ÐµÑ€ÐµÐ· 2 Ñ
+    if (triggered) st->showUntilMs = now + 2000;   // автопропадание через 2 с
     if (now >= st->showUntilMs) return;
 
-    // ÐÐ²Ð°Ñ€Ð¸Ð¹Ð½Ð¾Ðµ ÑÐ¾Ð¾Ð±Ñ‰ÐµÐ½Ð¸Ðµ â€” Ð¾Ð²ÐµÑ€Ð»ÐµÐ¹ Ð²ÑÐµÐ³Ð¾ ÑÐºÑ€Ð°Ð½Ð°, Ð° Ð½Ðµ ÑÐ¾Ð´ÐµÑ€Ð¶Ð¸Ð¼Ð¾Ðµ Ñ€Ð°Ð¼ÐºÐ¸.
+    // Аварийное сообщение — оверлей всего экрана, а не содержимое рамки.
     //
-    // rect ÑƒÐ¼Ñ‹ÑˆÐ»ÐµÐ½Ð½Ð¾ Ð¸Ð³Ð½Ð¾Ñ€Ð¸Ñ€ÑƒÐµÑ‚ÑÑ: Ð¿Ñ€ÐµÐ´ÑƒÐ¿Ñ€ÐµÐ¶Ð´ÐµÐ½Ð¸Ðµ Ð¾ Ð¿Ð°Ð´ÐµÐ½Ð¸Ð¸ Ð´Ð°Ð²Ð»ÐµÐ½Ð¸Ñ Ð¼Ð°ÑÐ»Ð°
-    // Ð´Ð¾Ð»Ð¶Ð½Ð¾ Ñ‡Ð¸Ñ‚Ð°Ñ‚ÑŒÑÑ Ð¼Ð³Ð½Ð¾Ð²ÐµÐ½Ð½Ð¾ Ð¸ Ð½Ðµ Ð¼Ð¾Ð¶ÐµÑ‚ Ð·Ð°Ð²Ð¸ÑÐµÑ‚ÑŒ Ð¾Ñ‚ Ñ‚Ð¾Ð³Ð¾, Ð² ÐºÐ°ÐºÐ¾Ð¹ ÑƒÐ³Ð¾Ð» ÐµÐ³Ð¾
-    // Ð¿Ð¾Ð»Ð¾Ð¶Ð¸Ð»Ð¸ Ð² Ñ€ÐµÐ´Ð°ÐºÑ‚Ð¾Ñ€Ðµ. Ð ÐµÐ´Ð°ÐºÑ‚Ð¾Ñ€ Ñ€Ð¸ÑÑƒÐµÑ‚ ÐµÐ³Ð¾ Ñ‚Ð°Ðº Ð¶Ðµ.
+    // rect умышленно игнорируется: предупреждение о падении давления масла
+    // должно читаться мгновенно и не может зависеть от того, в какой угол его
+    // положили в редакторе. Редактор рисует его так же.
     const uint16_t col = pC(p, "color", Layout::themeCrit());
-    dimScreen(179);   // Ð¾ÑÑ‚Ð°Ð²Ð¸Ñ‚ÑŒ 70% ÑÑ€ÐºÐ¾ÑÑ‚Ð¸ = Ð·Ð°Ñ‚ÐµÐ¼Ð½ÐµÐ½Ð¸Ðµ Ð½Ð° 30%
+    dimScreen(179);   // оставить 70% яркости = затемнение на 30%
 
     const int cx = LCD_WIDTH / 2;
     const int cy = LCD_HEIGHT / 2;
     const int rr = static_cast<int>((LCD_WIDTH < LCD_HEIGHT ? LCD_WIDTH : LCD_HEIGHT) * 0.28f);
 
-    // Ð Ð°Ð´Ð¸Ð°Ð»ÑŒÐ½Ñ‹Ð¹ Ð³Ñ€Ð°Ð´Ð¸ÐµÐ½Ñ‚: Ð¾Ñ‚ Ð½Ð°ÑÑ‹Ñ‰ÐµÐ½Ð½Ð¾Ð³Ð¾ Ñ†ÐµÐ½Ñ‚Ñ€Ð° Ðº Ð¿Ð¾Ñ‡Ñ‚Ð¸ Ð¿Ñ€Ð¾Ð·Ñ€Ð°Ñ‡Ð½Ð¾Ð¼Ñƒ ÐºÑ€Ð°ÑŽ.
-    // ÐžÐ´Ð¸Ð½ Ð¿Ñ€Ð¾Ñ…Ð¾Ð´ ÐºÐ¾Ð½Ñ†ÐµÐ½Ñ‚Ñ€Ð¸Ñ‡ÐµÑÐºÐ¸Ð¼Ð¸ Ð¾ÐºÑ€ÑƒÐ¶Ð½Ð¾ÑÑ‚ÑÐ¼Ð¸ Ð¿Ð¾Ð²Ñ‚Ð¾Ñ€ÑÐµÑ‚ createRadialGradient
-    // Ñ€ÐµÐ´Ð°ÐºÑ‚Ð¾Ñ€Ð° Ð¸ ÑÑ‚Ð¾Ð¸Ñ‚ Ð´ÐµÑˆÐµÐ²Ð»Ðµ ÑÐ¼ÐµÑˆÐ¸Ð²Ð°Ð½Ð¸Ñ ÐºÐ°Ð¶Ð´Ð¾Ð³Ð¾ Ð¿Ð¸ÐºÑÐµÐ»Ñ.
+    // Радиальный градиент: от насыщенного центра к почти прозрачному краю.
+    // Один проход концентрическими окружностями повторяет createRadialGradient
+    // редактора и стоит дешевле смешивания каждого пикселя.
     const uint16_t bg = f.bg;
     for (int rad = rr; rad >= 0; --rad) {
-        const float k = static_cast<float>(rad) / rr;   // 0 Ð² Ñ†ÐµÐ½Ñ‚Ñ€Ðµ, 1 Ð½Ð° ÐºÑ€Ð°ÑŽ
+        const float k = static_cast<float>(rad) / rr;   // 0 в центре, 1 на краю
         g->drawCircle(cx, cy, rad, blend565(bg, col, 0.85f - 0.65f * k));
     }
 
@@ -599,9 +620,42 @@ void paintWarning(const Frame& f, JsonObjectConst w, const R& /*r*/) {
                 static_cast<int>(rr * 0.22f), 0xFFFF, false);
 }
 
-// â”€â”€â”€ gforce â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── gforce ──────────────────────────────────────────────────────────────────
 
-void paintGForce(const Frame& f, JsonObjectConst w, const R& r) {
+/**
+ * Геометрия радара.
+ *
+ * Вынесена отдельно, потому что ею пользуются и отрисовка, и расчёт живой
+ * области. Разойдись эти два места хотя бы на пиксель — на экране остался бы
+ * след от шарика, и заметно это было бы только в движении.
+ */
+struct GForceGeom {
+    bool ok;
+    int  cx, cy, R0;
+    int  ballR;
+    int  numY, numPx;   ///< полоса с цифрами внизу
+};
+
+GForceGeom gforceGeom(const R& r) {
+    GForceGeom gm{};
+
+    // Радар занимает верхние ~80% высоты, снизу остаётся полоса под цифры —
+    // ровно та же раскладка, что в редакторе
+    const int radarSize = r.w < static_cast<int>(r.h * 0.80f)
+                            ? r.w : static_cast<int>(r.h * 0.80f);
+    gm.R0 = radarSize / 2;
+    gm.ok = gm.R0 >= 8;
+
+    gm.cx    = r.x + r.w / 2;
+    gm.cy    = r.y + gm.R0 + static_cast<int>(r.h * 0.04f);
+    gm.ballR = gm.R0 * 10 / 100 < 5 ? 5 : gm.R0 * 10 / 100;
+    gm.numPx = static_cast<int>(r.h * 0.13f) < 10 ? 10 : static_cast<int>(r.h * 0.13f);
+    gm.numY  = r.y + r.h - static_cast<int>(r.h * 0.07f) - gm.numPx;
+
+    return gm;
+}
+
+void paintGForce(const Frame& f, JsonObjectConst w, const R& r, Part part) {
     JsonObjectConst p = w["props"];
     auto* g = f.gfx;
 
@@ -609,93 +663,100 @@ void paintGForce(const Frame& f, JsonObjectConst w, const R& r) {
     const int   rings = pI(p, "rings", 2);
     if (range <= 0.0f || rings < 1) return;
 
-    // Ð Ð°Ð´Ð°Ñ€ Ð·Ð°Ð½Ð¸Ð¼Ð°ÐµÑ‚ Ð²ÐµÑ€Ñ…Ð½Ð¸Ðµ ~80% Ð²Ñ‹ÑÐ¾Ñ‚Ñ‹, ÑÐ½Ð¸Ð·Ñƒ Ð¾ÑÑ‚Ð°Ñ‘Ñ‚ÑÑ Ð¿Ð¾Ð»Ð¾ÑÐ° Ð¿Ð¾Ð´ Ñ†Ð¸Ñ„Ñ€Ñ‹ â€”
-    // Ñ€Ð¾Ð²Ð½Ð¾ Ñ‚Ð° Ð¶Ðµ Ñ€Ð°ÑÐºÐ»Ð°Ð´ÐºÐ°, Ñ‡Ñ‚Ð¾ Ð² Ñ€ÐµÐ´Ð°ÐºÑ‚Ð¾Ñ€Ðµ
-    const int radarSize = r.w < static_cast<int>(r.h * 0.80f)
-                            ? r.w : static_cast<int>(r.h * 0.80f);
-    const int R0 = radarSize / 2;
-    if (R0 < 8) return;
-
-    const int cx = r.x + r.w / 2;
-    const int cy = r.y + R0 + static_cast<int>(r.h * 0.04f);
+    const GForceGeom gm = gforceGeom(r);
+    if (!gm.ok) return;
+    const int cx = gm.cx, cy = gm.cy, R0 = gm.R0;
 
     const uint16_t bg  = f.bg;
     const uint16_t fg  = Layout::themeFg();
     const uint16_t mut = Layout::themeMuted();
 
-    // ÐŸÐ¾Ð´Ð»Ð¾Ð¶ÐºÐ° Ñ€Ð°Ð´Ð°Ñ€Ð° Ð¸ ÐµÐ³Ð¾ Ð¾Ð±Ð²Ð¾Ð´ÐºÐ°
-    g->fillCircle(cx, cy, R0, blend565(bg, 0xFFFF, 0.04f));
-    g->drawCircle(cx, cy, R0, blend565(bg, 0xFFFF, 0.15f));
+    // ── Оправа: диск, кольца, крестовина, подписи осей ──────────────────────
+    //
+    // От сигналов не зависит ничего, поэтому при разделении на слои всё это
+    // рисуется один раз при входе на экран. Раньше перерисовывалось каждый
+    // кадр, и одна только заливка диска — это 106 тысяч пикселей.
+    if (part != Part::Live) {
+        g->fillCircle(cx, cy, R0, blend565(bg, 0xFFFF, 0.04f));
+        g->drawCircle(cx, cy, R0, blend565(bg, 0xFFFF, 0.15f));
 
-    // ÐšÐ¾Ð»ÑŒÑ†Ð° Ñ Ð¿Ð¾Ð´Ð¿Ð¸ÑÑÐ¼Ð¸ Ð² G
-    const uint16_t ringCol = blend565(bg, 0xFFFF, 0.10f);
-    for (int i = 1; i <= rings; ++i) {
-        const int ringR = R0 * i / rings;
-        g->drawCircle(cx, cy, ringR, ringCol);
+        // Кольца с подписями в G
+        const uint16_t ringCol = blend565(bg, 0xFFFF, 0.10f);
+        for (int i = 1; i <= rings; ++i) {
+            const int ringR = R0 * i / rings;
+            g->drawCircle(cx, cy, ringR, ringCol);
 
-        char lab[8];
-        snprintf(lab, sizeof lab, "%.1f", static_cast<double>(range * i / rings));
-        drawCenteredText(g, lab,
-                         cx + static_cast<int>(ringR * 0.72f),
-                         cy - static_cast<int>(ringR * 0.72f),
-                         R0 * 11 / 100 < 10 ? 10 : R0 * 11 / 100,
-                         blend565(bg, 0xFFFF, 0.25f), false);
+            char lab[8];
+            snprintf(lab, sizeof lab, "%.1f", static_cast<double>(range * i / rings));
+            drawCenteredText(g, lab,
+                             cx + static_cast<int>(ringR * 0.72f),
+                             cy - static_cast<int>(ringR * 0.72f),
+                             R0 * 11 / 100 < 10 ? 10 : R0 * 11 / 100,
+                             blend565(bg, 0xFFFF, 0.25f), false);
+        }
+
+        // Крестовина пунктиром: в Arduino_GFX нет setLineDash, поэтому штрихи
+        // выкладываются вручную с тем же шагом 3/5, что в редакторе
+        const uint16_t crossCol = blend565(bg, 0xFFFF, 0.12f);
+        for (int d = -R0; d <= R0; d += 8) {
+            g->drawFastHLine(cx + d, cy, 3, crossCol);
+            g->drawFastVLine(cx, cy + d, 3, crossCol);
+        }
+
+        const int axisPx = R0 * 10 / 100 < 9 ? 9 : R0 * 10 / 100;
+        const uint16_t axisCol = blend565(bg, 0xFFFF, 0.20f);
+        drawCenteredText(g, "BRAKE", cx, cy - R0 + axisPx, axisPx, axisCol, false);
+        drawCenteredText(g, "ACCEL", cx, cy + R0 - axisPx, axisPx, axisCol, false);
     }
 
-    // ÐšÑ€ÐµÑÑ‚Ð¾Ð²Ð¸Ð½Ð° Ð¿ÑƒÐ½ÐºÑ‚Ð¸Ñ€Ð¾Ð¼: Ð² Arduino_GFX Ð½ÐµÑ‚ setLineDash, Ð¿Ð¾ÑÑ‚Ð¾Ð¼Ñƒ ÑˆÑ‚Ñ€Ð¸Ñ…Ð¸
-    // Ð²Ñ‹ÐºÐ»Ð°Ð´Ñ‹Ð²Ð°ÑŽÑ‚ÑÑ Ð²Ñ€ÑƒÑ‡Ð½ÑƒÑŽ Ñ Ñ‚ÐµÐ¼ Ð¶Ðµ ÑˆÐ°Ð³Ð¾Ð¼ 3/5, Ñ‡Ñ‚Ð¾ Ð² Ñ€ÐµÐ´Ð°ÐºÑ‚Ð¾Ñ€Ðµ
-    const uint16_t crossCol = blend565(bg, 0xFFFF, 0.12f);
-    for (int d = -R0; d <= R0; d += 8) {
-        g->drawFastHLine(cx + d, cy, 3, crossCol);
-        g->drawFastVLine(cx, cy + d, 3, crossCol);
-    }
+    if (part == Part::Chrome) return;
 
-    const int axisPx = R0 * 10 / 100 < 9 ? 9 : R0 * 10 / 100;
-    const uint16_t axisCol = blend565(bg, 0xFFFF, 0.20f);
-    drawCenteredText(g, "BRAKE", cx, cy - R0 + axisPx, axisPx, axisCol, false);
-    drawCenteredText(g, "ACCEL", cx, cy + R0 - axisPx, axisPx, axisCol, false);
+    // ── Живая часть: шарик со следом и цифры ────────────────────────────────
 
     const float ax = Signals::get(p["signalX"] | "imu.ax");
     const float ay = Signals::get(p["signalY"] | "imu.ay");
 
-    // Ð˜Ð½ÐµÑ€Ñ†Ð¸Ñ, Ð° Ð½Ðµ ÑƒÑÐºÐ¾Ñ€ÐµÐ½Ð¸Ðµ: Ð°ÐºÑÐµÐ»ÐµÑ€Ð¾Ð¼ÐµÑ‚Ñ€ Ð´Ð°Ñ‘Ñ‚ ÑƒÑÐºÐ¾Ñ€ÐµÐ½Ð¸Ðµ ÐºÑƒÐ·Ð¾Ð²Ð°, Ð° Ð²Ð¾Ð´Ð¸Ñ‚ÐµÐ»ÑŒ
-    // Ð¾Ñ‰ÑƒÑ‰Ð°ÐµÑ‚ ÑÐ¸Ð»Ñƒ Ð² Ð¿Ñ€Ð¾Ñ‚Ð¸Ð²Ð¾Ð¿Ð¾Ð»Ð¾Ð¶Ð½ÑƒÑŽ ÑÑ‚Ð¾Ñ€Ð¾Ð½Ñƒ. Ð Ð°Ð·Ð³Ð¾Ð½ ÑƒÐ²Ð¾Ð´Ð¸Ñ‚ ÑˆÐ°Ñ€Ð¸Ðº Ð²Ð½Ð¸Ð·,
-    // Ð¿Ð¾Ð²Ð¾Ñ€Ð¾Ñ‚ Ð²Ð¿Ñ€Ð°Ð²Ð¾ â€” Ð²Ð»ÐµÐ²Ð¾. Ð—Ð½Ð°ÐºÐ¸ Ð¸Ð½Ð²ÐµÑ€Ñ‚Ð¸Ñ€Ð¾Ð²Ð°Ð½Ñ‹, ÐºÐ°Ðº Ð² Ñ€ÐµÐ´Ð°ÐºÑ‚Ð¾Ñ€Ðµ.
+    // Инерция, а не ускорение: акселерометр даёт ускорение кузова, а водитель
+    // ощущает силу в противоположную сторону. Разгон уводит шарик вниз,
+    // поворот вправо — влево. Знаки инвертированы, как в редакторе.
     const int bx = cx - static_cast<int>(clampf(ax / range, -1.0f, 1.0f) * R0);
     const int by = cy + static_cast<int>(clampf(ay / range, -1.0f, 1.0f) * R0);
 
-    // Ð¡Ð»ÐµÐ´: Ñ‡ÐµÐ¼ ÑÐ²ÐµÐ¶ÐµÐµ Ñ‚Ð¾Ñ‡ÐºÐ°, Ñ‚ÐµÐ¼ ÐºÑ€ÑƒÐ¿Ð½ÐµÐµ Ð¸ ÑÑ€Ñ‡Ðµ
-    if (pB(p, "trail", true)) {
-        if (TrailState* ts = trailState(w["id"] | "gforce")) {
-            ts->x[ts->head] = static_cast<int16_t>(bx);
-            ts->y[ts->head] = static_cast<int16_t>(by);
-            ts->head = (ts->head + 1) % kTrailLen;
-            if (ts->filled < kTrailLen) ++ts->filled;
+    // Позиция пишется в кольцевой буфер всегда, даже когда след выключен: по
+    // нему считается живая область виджета, и без записи она была бы пустой.
+    TrailState* ts = trailState(w["id"] | "gforce");
+    if (ts) {
+        ts->x[ts->head] = static_cast<int16_t>(bx);
+        ts->y[ts->head] = static_cast<int16_t>(by);
+        ts->head = (ts->head + 1) % kTrailLen;
+        if (ts->filled < kTrailLen) ++ts->filled;
+    }
 
-            for (uint8_t i = 0; i < ts->filled; ++i) {
-                const uint8_t idx = (ts->head + kTrailLen - ts->filled + i) % kTrailLen;
-                const float   age = static_cast<float>(i) / ts->filled;   // 0 ÑÑ‚Ð°Ñ€Ñ‹Ð¹ â€¦ 1 ÑÐ²ÐµÐ¶Ð¸Ð¹
-                const int     tr  = static_cast<int>(4.0f * age) < 2 ? 2 : static_cast<int>(4.0f * age);
-                g->fillCircle(ts->x[idx], ts->y[idx], tr,
-                              blend565(bg, 0x055F, age * 0.5f));
-            }
+    // След: чем свежее точка, тем крупнее и ярче
+    if (ts && pB(p, "trail", true)) {
+        for (uint8_t i = 0; i < ts->filled; ++i) {
+            const uint8_t idx = (ts->head + kTrailLen - ts->filled + i) % kTrailLen;
+            const float   age = static_cast<float>(i) / ts->filled;   // 0 старый … 1 свежий
+            const int     tr  = static_cast<int>(4.0f * age) < 2 ? 2 : static_cast<int>(4.0f * age);
+            g->fillCircle(ts->x[idx], ts->y[idx], tr,
+                          blend565(bg, 0x055F, age * 0.5f));
         }
     }
 
-    // Ð¨Ð°Ñ€Ð¸Ðº: Ð²Ð¼ÐµÑÑ‚Ð¾ Ð³Ñ€Ð°Ð´Ð¸ÐµÐ½Ñ‚Ð° Ð¸ ÑÐ²ÐµÑ‡ÐµÐ½Ð¸Ñ â€” Ñ‚Ñ‘Ð¼Ð½Ð°Ñ ÐºÐ°Ð¹Ð¼Ð° Ð¸ ÑÐ²ÐµÑ‚Ð»Ñ‹Ð¹ Ð±Ð»Ð¸Ðº,
-    // ÑÑ‚Ð¾ Ñ‡Ð¸Ñ‚Ð°ÐµÑ‚ÑÑ Ñ‚Ð°Ðº Ð¶Ðµ, Ð½Ð¾ Ð±ÐµÐ· Ð¿Ð¾Ð¿Ð¸ÐºÑÐµÐ»ÑŒÐ½Ð¾Ð³Ð¾ ÑÐ¼ÐµÑˆÐ¸Ð²Ð°Ð½Ð¸Ñ
-    const int ballR = R0 * 10 / 100 < 5 ? 5 : R0 * 10 / 100;
+    // Шарик: вместо градиента и свечения — тёмная кайма и светлый блик,
+    // это читается так же, но без попиксельного смешивания
+    const int ballR = gm.ballR;
     g->fillCircle(bx, by, ballR + 1, blend565(bg, 0x055F, 0.35f));
     g->fillCircle(bx, by, ballR, 0x02DF);
     g->fillCircle(bx - ballR / 3, by - ballR / 3, ballR / 3 > 1 ? ballR / 3 : 1, 0x6E7F);
 
-    // Ð¡ÑƒÐ¼Ð¼Ð°Ñ€Ð½Ð°Ñ Ð¿ÐµÑ€ÐµÐ³Ñ€ÑƒÐ·ÐºÐ° Ð²Ð½Ð¸Ð·Ñƒ
+    // Суммарная перегрузка внизу
     char buf[12];
     snprintf(buf, sizeof buf, "%.2f", static_cast<double>(sqrtf(ax * ax + ay * ay)));
-    const int numPx = static_cast<int>(r.h * 0.13f) < 10 ? 10 : static_cast<int>(r.h * 0.13f);
-    const int numY  = r.y + r.h - static_cast<int>(r.h * 0.07f) - numPx;
+    const int numPx = gm.numPx;
+    const int numY  = gm.numY;
 
-    const Text::Face vf = Text::pick(numPx);
+    const Text::Face vf = Text::pick(buf, numPx);
     const int vw = Text::width(buf, vf);
     Text::drawBox(g, buf, cx - vw / 2, numY, vw, numPx,
                   Text::HA::Left, VA::Top, vf, fg);
@@ -703,9 +764,9 @@ void paintGForce(const Frame& f, JsonObjectConst w, const R& r) {
                 "left", VA::Top, numPx * 65 / 100, mut, false);
 }
 
-// â”€â”€â”€ graph â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── graph ───────────────────────────────────────────────────────────────────
 
-void paintGraph(const Frame& f, JsonObjectConst w, const R& r) {
+void paintGraph(const Frame& f, JsonObjectConst w, const R& r, Part part) {
     JsonObjectConst p = w["props"];
     auto* g = f.gfx;
 
@@ -713,15 +774,46 @@ void paintGraph(const Frame& f, JsonObjectConst w, const R& r) {
     const int ns = static_cast<int>(sigs.size());
     if (ns <= 0) return;
 
-    const char* id = w["id"] | "graph";
-    GraphState* st = graphState(id);
-    if (!st) return;
-
     const float mn = pF(p, "min", 0.0f);
     const float mx = pF(p, "max", 100.0f);
     if (mx - mn < 1.0e-6f) return;
 
-    // ÐžÐ´Ð¸Ð½ ÑÐµÐ¼Ð¿Ð» Ð½Ð° Ð¿Ð¸ÐºÑÐµÐ»ÑŒ Ð¿Ð¾ ÑˆÐ¸Ñ€Ð¸Ð½Ðµ Ð¾ÐºÐ½Ð°
+    const uint16_t bg  = f.bg;
+    const uint16_t mut = Layout::themeMuted();
+
+    // ── Оправа: сетка с подписями и рамка ───────────────────────────────────
+    // Считается по min/max из пропов, то есть от сигналов не зависит.
+    if (part != Part::Live) {
+        JsonObjectConst t = p["ticks"];
+        const float major = t["major"] | 0.0f;
+        if (major > 0.0f) {
+            const bool     labels  = t["labels"] | false;
+            const uint16_t gridCol = blend565(bg, 0xFFFF, 0.08f);
+
+            for (float v = mn; v <= mx + 0.001f; v += major) {
+                const int y = r.y + r.h - static_cast<int>((v - mn) / (mx - mn) * r.h);
+                g->drawFastHLine(r.x, y, r.w, gridCol);
+
+                if (labels) {
+                    char lab[12];
+                    snprintf(lab, sizeof lab, "%g", static_cast<double>(v));
+                    drawBoxText(g, lab, r.x + 3, y - 12, 40, 11, "left", VA::Top, 10, mut, false);
+                }
+            }
+        }
+
+        g->drawRect(r.x, r.y, r.w, r.h, mut);
+    }
+
+    if (part == Part::Chrome) return;
+
+    // ── Живая часть: набор истории и сами кривые ────────────────────────────
+
+    const char* id = w["id"] | "graph";
+    GraphState* st = graphState(id);
+    if (!st) return;
+
+    // Один семпл на пиксель по ширине окна
     const float windowSec = pF(p, "windowSec", 60.0f);
     const uint32_t stepMs = static_cast<uint32_t>(windowSec * 1000.0f / kGraphPoints);
     const uint32_t now = millis();
@@ -736,33 +828,8 @@ void paintGraph(const Frame& f, JsonObjectConst w, const R& r) {
         if (st->filled < kGraphPoints) ++st->filled;
     }
 
-    const uint16_t bg  = f.bg;
-    const uint16_t mut = Layout::themeMuted();
-
-    // Ð¡ÐµÑ‚ÐºÐ° Ð¿Ð¾ Ð³Ð¾Ñ€Ð¸Ð·Ð¾Ð½Ñ‚Ð°Ð»Ð¸ Ñ Ð¿Ð¾Ð´Ð¿Ð¸ÑÑÐ¼Ð¸ Ð·Ð½Ð°Ñ‡ÐµÐ½Ð¸Ð¹
-    JsonObjectConst t = p["ticks"];
-    const float major = t["major"] | 0.0f;
-    if (major > 0.0f) {
-        const bool     labels  = t["labels"] | false;
-        const uint16_t gridCol = blend565(bg, 0xFFFF, 0.08f);
-
-        for (float v = mn; v <= mx + 0.001f; v += major) {
-            const int y = r.y + r.h - static_cast<int>((v - mn) / (mx - mn) * r.h);
-            g->drawFastHLine(r.x, y, r.w, gridCol);
-
-            if (labels) {
-                char lab[12];
-                snprintf(lab, sizeof lab, "%g", static_cast<double>(v));
-                drawBoxText(g, lab, r.x + 3, y - 12, 40, 11, "left", VA::Top, 10, mut, false);
-            }
-        }
-    }
-
-    // Ð Ð°Ð¼ÐºÐ°
-    g->drawRect(r.x, r.y, r.w, r.h, mut);
-
-    // lineWidth Ð¸Ð· Ñ€ÐµÐ´Ð°ÐºÑ‚Ð¾Ñ€Ð°: Ñ€Ð¸ÑÑƒÐµÐ¼ Ð½ÐµÑÐºÐ¾Ð»ÑŒÐºÐ¾ ÑÐ¼ÐµÑ‰Ñ‘Ð½Ð½Ñ‹Ñ… Ð¿Ð¾ Ð²ÐµÑ€Ñ‚Ð¸ÐºÐ°Ð»Ð¸ Ð»Ð¸Ð½Ð¸Ð¹,
-    // Ð¿Ð¾Ñ‚Ð¾Ð¼Ñƒ Ñ‡Ñ‚Ð¾ Ñƒ Arduino_GFX Ð½ÐµÑ‚ Ñ‚Ð¾Ð»Ñ‰Ð¸Ð½Ñ‹ Ñƒ drawLine
+    // lineWidth из редактора: рисуем несколько смещённых по вертикали линий,
+    // потому что у Arduino_GFX нет толщины у drawLine
     const int lw = pI(p, "lineWidth", 1) < 1 ? 1 : pI(p, "lineWidth", 1);
 
     for (int i = 0; i < ns && i < kGraphSignals; ++i) {
@@ -771,7 +838,7 @@ void paintGraph(const Frame& f, JsonObjectConst w, const R& r) {
 
         int prevX = 0, prevY = 0;
         for (uint16_t k = 0; k < st->filled; ++k) {
-            // Ð˜Ð´Ñ‘Ð¼ Ð¾Ñ‚ ÑÐ°Ð¼Ð¾Ð³Ð¾ ÑÑ‚Ð°Ñ€Ð¾Ð³Ð¾ Ðº ÑÐ°Ð¼Ð¾Ð¼Ñƒ ÑÐ²ÐµÐ¶ÐµÐ¼Ñƒ
+            // Идём от самого старого к самому свежему
             const uint16_t idx = (st->head + kGraphPoints - st->filled + k) % kGraphPoints;
             const float nv = clampf((st->v[i][idx] - mn) / (mx - mn), 0.0f, 1.0f);
             const int x = r.x + static_cast<int>(static_cast<float>(k) * r.w / kGraphPoints);
@@ -787,12 +854,12 @@ void paintGraph(const Frame& f, JsonObjectConst w, const R& r) {
     }
 }
 
-// â”€â”€â”€ clock â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── clock ───────────────────────────────────────────────────────────────────
 
 void paintClock(const Frame& f, JsonObjectConst w, const R& r) {
     JsonObjectConst p = w["props"];
 
-    // RTC PCF8563 ÐµÑ‰Ñ‘ Ð½Ðµ Ð¿Ð¾Ð´ÐºÐ»ÑŽÑ‡Ñ‘Ð½ â€” Ð²Ñ€ÐµÐ¼Ñ ÑÐ¸Ð½Ñ‚ÐµÐ·Ð¸Ñ€ÑƒÐµÐ¼ Ð¸Ð· uptime.
+    // RTC PCF8563 ещё не подключён — время синтезируем из uptime.
     const uint32_t s = millis() / 1000;
     char buf[16];
     if (pB(p, "showSeconds", false)) {
@@ -811,7 +878,7 @@ void paintClock(const Frame& f, JsonObjectConst w, const R& r) {
                 pC(p, "color", Layout::themeFg()));
 }
 
-// â”€â”€â”€ Ð—Ð°Ð³Ð»ÑƒÑˆÐºÐ° Ð´Ð»Ñ Ð½ÐµÑ€ÐµÐ°Ð»Ð¸Ð·Ð¾Ð²Ð°Ð½Ð½Ñ‹Ñ… Ñ‚Ð¸Ð¿Ð¾Ð² â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Заглушка для нереализованных типов ──────────────────────────────────────
 
 void paintPlaceholder(const Frame& f, const R& r, const char* type) {
     auto* g = f.gfx;
@@ -820,34 +887,110 @@ void paintPlaceholder(const Frame& f, const R& r, const char* type) {
     drawBoxText(g, type, r.x, r.y, r.w, r.h, "center", VA::Mid, 13, mut, false);
 }
 
-// â”€â”€â”€ Ð”Ð¸ÑÐ¿ÐµÑ‚Ñ‡ÐµÑ€ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Диспетчер ───────────────────────────────────────────────────────────────
 
-void paintWidget(const Frame& f, JsonObjectConst w) {
+/// Меняется ли виджет от кадра к кадру.
+///
+/// Подписи и картинки не зависят ни от сигналов, ни от времени, поэтому их
+/// место — в статическом слое. Часы формально меняются, но раз в секунду;
+/// держать их в динамике проще, чем изобретать третий класс.
+bool isStatic(const char* type) {
+    return strcmp(type, "label") == 0 || strcmp(type, "image") == 0;
+}
+
+/// Рисует ли виджет за пределами своей рамки.
+///
+/// Авария и вспышка шифт-лайта затемняют или заливают весь экран. Для
+/// восстановления фона это значит, что прямоугольником виджета не отделаться.
+bool isFullScreen(JsonObjectConst w, const char* type) {
+    if (strcmp(type, "warning") == 0) return true;
+    if (strcmp(type, "shift_light") == 0) {
+        const char* mode = w["props"]["mode"] | "segments";
+        return strcmp(mode, "flash") == 0;
+    }
+    return false;
+}
+
+/// Рамка виджета с учётом сдвига сцены.
+R rectOf(const Frame& f, JsonObjectConst w) {
     JsonObjectConst rc = w["rect"];
-    const R r = {
+    return R{
         (rc["x"] | 0) + f.shiftX,
         (rc["y"] | 0) + f.shiftY,
         rc["w"] | 0,
         rc["h"] | 0,
     };
+}
+
+/// Виджеты с неподвижной оправой, которую можно отдать статическому слою.
+bool isHybrid(const char* type) {
+    return strcmp(type, "gforce") == 0 || strcmp(type, "graph") == 0;
+}
+
+/**
+ * Область виджета, меняющаяся от кадра к кадру.
+ *
+ * Возвращает false, если виджет меняется целиком и надо брать всю рамку.
+ *
+ * Смысл есть только там, где рамка сильно больше движущейся части. Радар
+ * G-force занимает 436x460 — 92% экрана, — но меняются в нём лишь шарик со
+ * следом и цифры внизу. Восстановление и отправка всей рамки стоили около
+ * 400 КБ трафика по PSRAM на кадр.
+ *
+ * Функция вызывается дважды за кадр — из restoreDynamic() до отрисовки и из
+ * dirtyBands() после — и оба раза возвращает объединение области прошлого
+ * кадра с текущей: прошлый кадр надо затереть, текущий отправить.
+ */
+bool liveRect(const Frame& f, JsonObjectConst w, const char* type, R& out) {
+    if (strcmp(type, "gforce") != 0) return false;
+
+    const R r = rectOf(f, w);
+    const GForceGeom gm = gforceGeom(r);
+    if (!gm.ok) return false;
+
+    TrailState* ts = trailState(w["id"] | "gforce");
+    if (!ts || ts->filled == 0) return false;
+
+    // Цифры внизу меняются каждый кадр, их полоса входит всегда
+    R box{r.x, gm.numY - 2, r.w, gm.numPx + 4};
+
+    // Шарик рисуется радиусом ballR+1, плюс запас на кайму
+    const int pad = gm.ballR + 3;
+    for (uint8_t i = 0; i < ts->filled; ++i) {
+        box = unite(box, R{ts->x[i] - pad, ts->y[i] - pad, pad * 2, pad * 2});
+    }
+    box = clipTo(box, r);
+    if (box.w <= 0) return false;
+
+    out = unite(box, ts->live);
+    ts->live = box;
+    return true;
+}
+
+void paintWidget(const Frame& f, JsonObjectConst w, Part part = Part::All) {
+    const R r = rectOf(f, w);
     if (r.w <= 0 || r.h <= 0) return;
 
     const char* type  = w["type"] | "";
     const char* sigId = w["signal"] | static_cast<const char*>(nullptr);
     const float value = sigId ? Signals::get(sigId) : 0.0f;
 
-    if      (strcmp(type, "arc_gauge")   == 0) paintArcGauge(f, w, r, value);
-    else if (strcmp(type, "numeric")     == 0) paintNumeric(f, w, r, value);
+    if      (strcmp(type, "gforce")      == 0) { paintGForce(f, w, r, part); return; }
+    else if (strcmp(type, "graph")       == 0) { paintGraph(f, w, r, part);  return; }
+
+    // Остальные виджеты на части не делятся: либо неподвижны целиком, либо
+    // меняются целиком. Их незачем вызывать в чужом проходе.
+    if (part == Part::Chrome) return;
+
+    if      (strcmp(type, "numeric")     == 0) paintNumeric(f, w, r, value);
     else if (strcmp(type, "label")       == 0) paintLabel(f, w, r);
     else if (strcmp(type, "bar")         == 0) paintBar(f, w, r, value);
     else if (strcmp(type, "shift_light") == 0) paintShiftLight(f, w, r, value);
     else if (strcmp(type, "warning")     == 0) paintWarning(f, w, r);
-    else if (strcmp(type, "gforce")      == 0) paintGForce(f, w, r);
-    else if (strcmp(type, "graph")       == 0) paintGraph(f, w, r);
     else if (strcmp(type, "clock")       == 0) paintClock(f, w, r);
     else if (strcmp(type, "steering")    == 0) {
-        // ÐžÑ‚ÑÑƒÑ‚ÑÑ‚Ð²ÑƒÑŽÑ‰Ð¸Ð¹ ÑÐ¸Ð³Ð½Ð°Ð» = Ñ€ÑƒÐ»ÑŒ Ð¿Ð¾ Ñ†ÐµÐ½Ñ‚Ñ€Ñƒ. ÐžÐ±Ñ‰Ð¸Ð¹ fallback Ð² 0 Ð·Ð´ÐµÑÑŒ Ð½Ðµ
-        // Ð¿Ð¾Ð´Ñ…Ð¾Ð´Ð¸Ñ‚: 0 â€” ÑÑ‚Ð¾ Ð·Ð°ÐºÐ¾Ð½Ð½Ð¾Ðµ Â«Ð¿Ð¾Ð»Ð½Ð¾ÑÑ‚ÑŒÑŽ Ð²Ð»ÐµÐ²Ð¾Â».
+        // Отсутствующий сигнал = руль по центру. Общий fallback в 0 здесь не
+        // подходит: 0 — это законное «полностью влево».
         paintSteering(f, w, r, sigId && Signals::has(sigId) ? value : 0.5f);
     }
     else paintPlaceholder(f, r, type);
@@ -855,22 +998,19 @@ void paintWidget(const Frame& f, JsonObjectConst w) {
 
 } // namespace
 
-// â”€â”€â”€ ÐŸÑƒÐ±Ð»Ð¸Ñ‡Ð½Ñ‹Ð¹ Ð²Ñ…Ð¾Ð´ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Публичный вход ──────────────────────────────────────────────────────────
 
-void screen(const Frame& f, uint8_t screenIdx) {
-    JsonArrayConst ws = Layout::widgets(screenIdx);
+namespace {
 
-    // Ð¤Ð¾Ð½ Ð·Ð´ÐµÑÑŒ ÐÐ• Ð·Ð°Ð»Ð¸Ð²Ð°ÐµÑ‚ÑÑ: Ð²Ð¾ Ð²Ñ€ÐµÐ¼Ñ ÑÐ²Ð°Ð¹Ð¿Ð° Ð² Ð¾Ð´Ð¸Ð½ ÐºÐ°Ð´Ñ€ Ñ€Ð¸ÑÑƒÑŽÑ‚ÑÑ Ð´Ð²Ð°
-    // ÑÐºÑ€Ð°Ð½Ð° ÑÐ¾ ÑÐ´Ð²Ð¸Ð³Ð¾Ð¼, Ð¸ Ð·Ð°Ð»Ð¸Ð²ÐºÐ° Ð²Ð½ÑƒÑ‚Ñ€Ð¸ ÑÑ‚Ð¾Ð¹ Ñ„ÑƒÐ½ÐºÑ†Ð¸Ð¸ ÑÑ‚Ñ‘Ñ€Ð»Ð° Ð±Ñ‹ Ð¿ÐµÑ€Ð²Ñ‹Ð¹.
-    // ÐžÑ‡Ð¸ÑÑ‚ÐºÑƒ Ð´ÐµÐ»Ð°ÐµÑ‚ Ð²Ñ‹Ð·Ñ‹Ð²Ð°ÑŽÑ‰Ð¸Ð¹ â€” ÑÐ¼. loop() Ð² main.cpp.
+constexpr int kMaxWidgets = 32;
 
-    // ÐŸÐ¾Ñ€ÑÐ´Ð¾Ðº Ð¿Ð¾ z: ÑÐ¾Ñ€Ñ‚Ð¸Ñ€ÑƒÐµÐ¼ Ð¸Ð½Ð´ÐµÐºÑÑ‹, ÑÐ°Ð¼ JSON Ð½Ðµ Ñ‚Ñ€Ð¾Ð³Ð°ÐµÐ¼.
-    // Ð’Ð¸Ð´Ð¶ÐµÑ‚Ð¾Ð² ÐµÐ´Ð¸Ð½Ð¸Ñ†Ñ‹, Ð¿Ð¾ÑÑ‚Ð¾Ð¼Ñƒ Ð²ÑÑ‚Ð°Ð²ÐºÐ°Ð¼Ð¸ â€” Ð´ÐµÑˆÐµÐ²Ð»Ðµ Ð»ÑŽÐ±Ð¾Ð¹ Ð°Ð»ÑŒÑ‚ÐµÑ€Ð½Ð°Ñ‚Ð¸Ð²Ñ‹.
-    const int n = static_cast<int>(ws.size());
-    constexpr int kMaxWidgets = 32;
-    uint8_t order[kMaxWidgets];
+/// Индексы виджетов экрана в порядке возрастания z.
+/// Возвращает их количество, сам JSON не трогает.
+int zOrderOf(JsonArrayConst ws, uint8_t* order) {
+    const int n   = static_cast<int>(ws.size());
     const int cnt = n < kMaxWidgets ? n : kMaxWidgets;
 
+    // Вставками: виджетов единицы, любая другая сортировка тут дороже себя.
     for (int i = 0; i < cnt; ++i) order[i] = static_cast<uint8_t>(i);
     for (int i = 1; i < cnt; ++i) {
         const uint8_t cur = order[i];
@@ -882,10 +1022,235 @@ void screen(const Frame& f, uint8_t screenIdx) {
         }
         order[j + 1] = cur;
     }
+    return cnt;
+}
 
-    for (int i = 0; i < cnt; ++i) {
-        paintWidget(f, ws[order[i]].as<JsonObjectConst>());
+bool overlaps(const R& a, const R& b) {
+    return a.x < b.x + b.w && b.x < a.x + a.w &&
+           a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+/**
+ * Раскладка экрана на слои: кто попадает в статический слой, а кто рисуется
+ * каждый кадр.
+ *
+ * По типу виджета этого не решить до конца. Статический слой всегда лежит ПОД
+ * динамическими виджетами, потому что фон под ними восстанавливается из слоя,
+ * а сами они рисуются сверху. Значит подпись с z выше движущегося виджета, с
+ * которым она перекрывается, в слое оставлять нельзя — иначе движущийся виджет
+ * её закроет, и z-порядок перевернётся.
+ *
+ * Поэтому такие подписи понижаются до динамических. Проход идёт в порядке
+ * отрисовки, и понижённый виджет дальше считается динамическим — так каскад
+ * (подпись над подписью над баром) разрешается сам.
+ */
+struct Layers {
+    uint8_t  order[kMaxWidgets];
+    uint32_t dynamicMask = 0;   ///< бит по позиции в order
+    /// Полноэкранные оверлеи по условию: Warning и вспышка шифт-лайта.
+    ///
+    /// Рисуются они в динамическом проходе, но в геометрию восстановления и
+    /// отправки не входят. Их рамка — весь экран, а срабатывают они изредка;
+    /// учитывать её постоянно значило бы каждый кадр копировать и отправлять
+    /// полный кадр. Когда оверлей действительно нарисован, screen() сообщает
+    /// об этом, и кадр восстанавливается целиком.
+    uint32_t overlayMask = 0;
+    /// Виджеты с неподвижной оправой: рисуются в оба прохода разными частями.
+    uint32_t hybridMask = 0;
+    int      count      = 0;
+};
+
+/// Кэш раскладки: пересчитывать её каждый кадр значило бы читать все рамки из
+/// JSON заново, а меняется она только при смене экрана.
+Layers  s_layers;
+uint8_t s_layersScreen = 0xFF;
+
+const Layers& layersOf(JsonArrayConst ws, uint8_t screenIdx) {
+    if (s_layersScreen == screenIdx) return s_layers;
+
+    Layers& L = s_layers;
+    L.count       = zOrderOf(ws, L.order);
+    L.dynamicMask = 0;
+    L.overlayMask = 0;
+    L.hybridMask  = 0;
+
+    // Рамки в координатах лейаута, без сдвига сцены: сдвиг одинаков для всех
+    // виджетов и на перекрытия не влияет.
+    R rects[kMaxWidgets];
+    for (int i = 0; i < L.count; ++i) {
+        JsonObjectConst w  = ws[L.order[i]].as<JsonObjectConst>();
+        JsonObjectConst rc = w["rect"];
+        const char* type   = w["type"] | "";
+
+        rects[i] = R{rc["x"] | 0, rc["y"] | 0, rc["w"] | 0, rc["h"] | 0};
+
+        if (isFullScreen(w, type)) {
+            L.dynamicMask |= (1u << i);
+            L.overlayMask |= (1u << i);
+            continue;
+        }
+
+        if (isHybrid(type)) L.hybridMask |= (1u << i);
+
+        bool dyn = !isStatic(type);
+        if (!dyn) {
+            // Оверлеи в проверке не участвуют: их рамка накрывает экран, и
+            // иначе они понижали бы в динамические каждую подпись над собой.
+            const uint32_t below = L.dynamicMask & ~L.overlayMask;
+            for (int j = 0; j < i; ++j) {
+                if ((below & (1u << j)) && overlaps(rects[i], rects[j])) {
+                    dyn = true;
+                    break;
+                }
+            }
+        }
+        if (dyn) L.dynamicMask |= (1u << i);
     }
+
+    // Печатается при смене экрана, то есть редко.
+    //
+    // Меряем ДОЛЮ СТРОК, попадающих в полосы отправки, а не сумму площадей
+    // виджетов: виджеты перекрываются, и сумма площадей легко переваливает за
+    // 100%, из-за чего это число сначала было бессмысленным. Отправка идёт
+    // полосами во всю ширину, так что строки — это ровно то, за что мы платим.
+    bool rowUsed[LCD_HEIGHT] = {};
+    int dynCount = 0, ovCount = 0;
+    for (int i = 0; i < L.count; ++i) {
+        if (L.overlayMask & (1u << i)) { ++ovCount; continue; }
+        if (!(L.dynamicMask & (1u << i))) continue;
+        ++dynCount;
+        int y0 = rects[i].y - 1;
+        int y1 = rects[i].y + rects[i].h + 1;
+        if (y0 < 0) y0 = 0;
+        if (y1 > LCD_HEIGHT) y1 = LCD_HEIGHT;
+        for (int y = y0; y < y1; ++y) rowUsed[y] = true;
+    }
+    int rows = 0;
+    for (int y = 0; y < LCD_HEIGHT; ++y) rows += rowUsed[y] ? 1 : 0;
+
+    int hyCount = 0;
+    for (int i = 0; i < L.count; ++i) hyCount += (L.hybridMask & (1u << i)) ? 1 : 0;
+
+    Serial.printf("[layers] экран %u: %d виджетов, %d динамических, "
+                  "%d статических, %d оверлеев, %d с оправой, отправка %d%% строк\n",
+                  screenIdx, L.count, dynCount,
+                  L.count - dynCount - ovCount, ovCount, hyCount,
+                  rows * 100 / LCD_HEIGHT);
+
+    s_layersScreen = screenIdx;
+    return L;
+}
+
+} // namespace
+
+bool screen(const Frame& f, uint8_t screenIdx, Pass pass) {
+    JsonArrayConst ws = Layout::widgets(screenIdx);
+
+    // Фон здесь НЕ заливается: во время свайпа в один кадр рисуются два
+    // экрана со сдвигом, и заливка внутри этой функции стёрла бы первый.
+    // Очистку делает вызывающий — см. loop() в main.cpp.
+
+    // Оверлей определяется по факту заливки, а не по наличию виджета на
+    // экране: Warning стоит почти всюду, но срабатывает изредка.
+    s_overlayDrawn = false;
+
+    if (pass == Pass::All) {
+        uint8_t order[kMaxWidgets];
+        const int cnt = zOrderOf(ws, order);
+        for (int i = 0; i < cnt; ++i) {
+            paintWidget(f, ws[order[i]].as<JsonObjectConst>());
+        }
+        s_layersScreen = 0xFF;   // порядок обхода не тот, кэш не строим
+        return s_overlayDrawn;
+    }
+
+    const Layers& L = layersOf(ws, screenIdx);
+    const bool wantDynamic = (pass == Pass::Dynamic);
+
+    for (int i = 0; i < L.count; ++i) {
+        JsonObjectConst w = ws[L.order[i]].as<JsonObjectConst>();
+
+        // Гибрид попадает в оба прохода: оправа в статический слой, живая
+        // часть поверх неё каждый кадр.
+        if (L.hybridMask & (1u << i)) {
+            paintWidget(f, w, wantDynamic ? Part::Live : Part::Chrome);
+            continue;
+        }
+
+        if (((L.dynamicMask & (1u << i)) != 0) != wantDynamic) continue;
+        paintWidget(f, w);
+    }
+    return s_overlayDrawn;
+}
+
+void restoreDynamic(const Frame& f, uint8_t screenIdx) {
+    JsonArrayConst ws = Layout::widgets(screenIdx);
+    const Layers& L   = layersOf(ws, screenIdx);
+
+    for (int i = 0; i < L.count; ++i) {
+        if (!(L.dynamicMask & (1u << i))) continue;
+        if (L.overlayMask & (1u << i)) continue;
+
+        JsonObjectConst w = ws[L.order[i]].as<JsonObjectConst>();
+        R r;
+        if (!liveRect(f, w, w["type"] | "", r)) r = rectOf(f, w);
+        if (r.w <= 0 || r.h <= 0) continue;
+
+        // Запас в пиксель по каждой стороне: скруглённые рамки и толстые
+        // линии кое-где выходят за геометрическую границу на полпикселя, и
+        // без запаса от них остаётся кайма.
+        Display::restoreRect(r.x - 1, r.y - 1, r.w + 2, r.h + 2);
+    }
+}
+
+int dirtyBands(const Frame& f, uint8_t screenIdx, Band* out, int max) {
+    if (!out || max < 1) return 0;
+
+    JsonArrayConst ws = Layout::widgets(screenIdx);
+    const Layers& L   = layersOf(ws, screenIdx);
+
+    Band raw[kMaxWidgets];
+    int n = 0;
+    for (int i = 0; i < L.count && n < kMaxWidgets; ++i) {
+        if (!(L.dynamicMask & (1u << i))) continue;
+        if (L.overlayMask & (1u << i)) continue;
+
+        JsonObjectConst w = ws[L.order[i]].as<JsonObjectConst>();
+        R r;
+        if (!liveRect(f, w, w["type"] | "", r)) r = rectOf(f, w);
+        if (r.h <= 0) continue;
+
+        // Тот же запас в пиксель, что при восстановлении фона
+        raw[n].y0 = static_cast<int16_t>(r.y - 1);
+        raw[n].y1 = static_cast<int16_t>(r.y + r.h + 1);
+        ++n;
+    }
+    if (n == 0) return 0;
+
+    // Сортировка вставками по началу полосы: полос единицы
+    for (int i = 1; i < n; ++i) {
+        const Band v = raw[i];
+        int j = i - 1;
+        while (j >= 0 && raw[j].y0 > v.y0) { raw[j + 1] = raw[j]; --j; }
+        raw[j + 1] = v;
+    }
+
+    // Слияние. Разрыв меньше kGap строк выгоднее передать вместе с полосой,
+    // чем заводить под него отдельное окно адресации.
+    constexpr int kGap = 12;
+    int m = 0;
+    out[0] = raw[0];
+    for (int i = 1; i < n; ++i) {
+        if (raw[i].y0 <= out[m].y1 + kGap) {
+            if (raw[i].y1 > out[m].y1) out[m].y1 = raw[i].y1;
+        } else if (m + 1 < max) {
+            out[++m] = raw[i];
+        } else {
+            // Полосы кончились — остаток дотягиваем до последней.
+            if (raw[i].y1 > out[m].y1) out[m].y1 = raw[i].y1;
+        }
+    }
+    return m + 1;
 }
 
 } // namespace Render

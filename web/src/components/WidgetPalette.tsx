@@ -16,16 +16,6 @@ interface PaletteItem {
 
 const PALETTE: PaletteItem[] = [
   {
-    type: 'arc_gauge', label: 'Arc Gauge', icon: '◉',
-    defaultWidget: () => ({
-      type: 'arc_gauge',
-      rect: { x: 58, y: 58, w: 350, h: 350 },
-      z: 0,
-      signal: 'engine.rpm',
-      props: { min: 0, max: 8000, startAngle: 135, endAngle: 405, thickness: 18, rounded: true, color: '#FFFFFF', trackColor: '#1C1C1E' },
-    }),
-  },
-  {
     type: 'numeric', label: 'Numeric', icon: '🔢',
     defaultWidget: () => ({
       type: 'numeric',
@@ -195,7 +185,7 @@ export function WidgetPalette() {
       <div className="palette-list">
         {PALETTE.map(item => (
           <button
-            key={item.type}
+            key={item.label}
             className="palette-item"
             onClick={() => handleAdd(item)}
             title={`Add ${item.label}`}

@@ -56,7 +56,6 @@ export interface ScaleTicks {
 // ─── Виджеты ──────────────────────────────────────────────────────────────────
 
 export type WidgetType =
-  | 'arc_gauge'
   | 'needle_gauge'
   | 'bar'
   | 'numeric'
@@ -78,23 +77,6 @@ interface WidgetBase {
   signal?: SignalId
   unit?: string
 }
-
-// arc_gauge — дуговая шкала (прогресс по дуге)
-export interface ArcGaugeProps {
-  min: number
-  max: number
-  startAngle?: number    // градусы, 0 = вправо, по часовой; default 135
-  endAngle?: number      // default 405 (135+270 = полный круг с зазором)
-  thickness?: number     // px; default 16
-  rounded?: boolean
-  color?: Color
-  trackColor?: Color
-  peakHold?: boolean
-  zones?: ScaleZone[]
-  ticks?: ScaleTicks
-  showValue?: boolean
-}
-export interface ArcGaugeWidget extends WidgetBase { type: 'arc_gauge'; props: ArcGaugeProps }
 
 // numeric — цифровое значение
 export interface NumericProps {
@@ -230,7 +212,6 @@ export interface LapTimerProps {
 export interface LapTimerWidget extends WidgetBase { type: 'lap_timer'; props: LapTimerProps }
 
 export type Widget =
-  | ArcGaugeWidget
   | NeedleGaugeWidget
   | NumericWidget
   | LabelWidget
@@ -259,10 +240,9 @@ export interface Display {
   w: number
   h: number
   shape: 'round' | 'rect'
-  safeInset?: number
 }
 
-export const DISPLAY_466: Display = { w: 466, h: 466, shape: 'round', safeInset: 10 }
+export const DISPLAY_466: Display = { w: 466, h: 466, shape: 'round' }
 
 /**
  * Симуляция сигналов на устройстве.

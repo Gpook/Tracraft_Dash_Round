@@ -238,8 +238,10 @@ export function DisplayCanvas({ display, zoom = 0.82, showBurnInOrbit = false }:
       ref={canvasRef}
       width={W} height={H}
       style={{
+        // Скругления нет намеренно: прошивка рисует весь квадрат 466x466 и
+        // ничего не обрезает. Круглая маска здесь скрывала бы то, что на
+        // устройстве видно, то есть врала о результате.
         width: W * zoom, height: H * zoom,
-        borderRadius: display.shape === 'round' ? '50%' : 0,
         userSelect: 'none',
         boxShadow: '0 0 0 1px rgba(255,255,255,0.06), 0 8px 48px rgba(0,0,0,0.8)',
       }}
@@ -281,38 +283,22 @@ function drawFrame(
   orbitPhase: number = 0,
   showOrbit: boolean = false,
 ) {
-  const { w, h, shape, safeInset = 10 } = display
-  const cx = w / 2, cy = h / 2, r = w / 2
+  const { w, h } = display
 
   ctx.clearRect(0, 0, w, h)
 
-  // Круглый clip
-  if (shape === 'round') {
-    ctx.save()
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip()
-  }
-
-  // Фон (screen.bg с фолбэком на theme.bg)
+  // Ни круглого clip, ни кольца безопасной зоны здесь нет намеренно.
+  // Прошивка рисует весь квадрат 466x466 и ничего не обрезает, поэтому и
+  // превью не должно: обрезка в редакторе была расхождением с устройством,
+  // а не отражением его поведения.
   ctx.fillStyle = bg
   ctx.fillRect(0, 0, w, h)
 
-  // Виджеты
   const sorted = [...widgets].sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
   for (const widget of sorted) {
     ctx.save()
     try { paintWidget(ctx, widget, signals, theme, time, display) } catch { /* защита от краша рендерера */ }
     ctx.restore()
-  }
-
-  if (shape === 'round') ctx.restore()
-
-  // Safe-area ring
-  if (shape === 'round' && safeInset > 0) {
-    ctx.save()
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)'
-    ctx.lineWidth = 1; ctx.setLineDash([4, 8])
-    ctx.beginPath(); ctx.arc(cx, cy, r - safeInset, 0, Math.PI * 2); ctx.stroke()
-    ctx.setLineDash([]); ctx.restore()
   }
 
   // Орбита
@@ -331,7 +317,7 @@ function drawFrame(
     ctx.font = 'bold 13px Inter,sans-serif'
     ctx.fillStyle = 'rgba(255,255,255,0.5)'
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-    ctx.fillText('▶  Click to resume', cx, cy)
+    ctx.fillText('▶  Click to resume', w / 2, h / 2)
   }
 }
 

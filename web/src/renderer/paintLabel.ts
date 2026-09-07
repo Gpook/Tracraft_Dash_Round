@@ -8,7 +8,7 @@
 
 import { LabelWidget } from '@/schema/layout'
 import { fitFontSize } from './fitText'
-import { fontOf, snapEm } from './deviceFont'
+import { fontOf } from './deviceFont'
 
 // Текст занимает не всю высоту рамки — иначе выносные элементы букв режутся
 const HEIGHT_RATIO = 0.72
@@ -25,7 +25,7 @@ export function paintLabel(
   const fontTpl = (px: number) => fontOf(px)
 
   const size = fontSize && fontSize > 0
-    ? snapEm(fontSize, false)
+    ? fontSize
     : fitFontSize(ctx, text, rect.w * WIDTH_RATIO, rect.h * HEIGHT_RATIO, fontTpl)
 
   ctx.save()

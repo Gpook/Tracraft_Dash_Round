@@ -62,12 +62,7 @@
       "properties": {
         "w": { "type": "integer", "minimum": 64, "maximum": 2048 },
         "h": { "type": "integer", "minimum": 64, "maximum": 2048 },
-        "shape": { "enum": ["round", "rect"] },
-        "safeInset": {
-          "type": "integer",
-          "default": 8,
-          "description": "Отступ от края в px: зона, куда не стоит класть текст на круглом стекле."
-        }
+        "shape": { "enum": ["round", "rect"] }
       }
     },
 
@@ -127,7 +122,7 @@
       "properties": {
         "id": { "$ref": "#/$defs/slug" },
         "type": {
-          "enum": ["arc_gauge", "needle_gauge", "bar", "numeric", "label", "shift_light", "warning", "graph", "gforce", "steering", "image"]
+          "enum": ["needle_gauge", "bar", "numeric", "label", "shift_light", "warning", "graph", "gforce", "steering", "image"]
         },
         "rect": { "$ref": "#/$defs/rect" },
         "z": { "type": "integer", "default": 0 },
@@ -178,22 +173,6 @@
     "widget": {
       "allOf": [{ "$ref": "#/$defs/widgetBase" }],
       "oneOf": [
-        {
-          "title": "arc_gauge — дуговая шкала",
-          "properties": {
-            "type": { "const": "arc_gauge" },
-            "props": {
-              "allOf": [{ "$ref": "#/$defs/scaleProps" }],
-              "properties": {
-                "startAngle": { "type": "number", "default": 135, "description": "Градусы, 0 = вправо, по часовой." },
-                "endAngle": { "type": "number", "default": 405 },
-                "thickness": { "type": "integer", "minimum": 2, "default": 16 },
-                "rounded": { "type": "boolean", "default": true },
-                "showValue": { "type": "boolean", "default": false }
-              }
-            }
-          }
-        },
         {
           "title": "needle_gauge — круглая шкала со стрелкой",
           "properties": {

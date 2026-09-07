@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Toolbar } from '@/components/Toolbar'
 import { WidgetPalette } from '@/components/WidgetPalette'
+import { LayersPanel } from '@/components/LayersPanel'
 import { DisplayCanvas } from '@/components/DisplayCanvas'
 import { PropertiesPanel } from '@/components/PropertiesPanel'
 import { useEditorStore } from '@/store'
@@ -26,7 +27,10 @@ export default function App() {
     <div className="app">
       <Toolbar />
       <div className="editor-body">
-        <WidgetPalette />
+        <div className="sidebar">
+          <WidgetPalette />
+          <LayersPanel />
+        </div>
         <main className="canvas-area">
           <div className="canvas-wrapper">
             <DisplayCanvas display={layout.display} zoom={ZOOM} showBurnInOrbit={showOrbit} />

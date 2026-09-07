@@ -3,7 +3,6 @@
  */
 
 import { Widget, Theme, SignalId } from '@/schema/layout'
-import { paintArcGauge }  from './paintArcGauge'
 import { paintNumeric }   from './paintNumeric'
 import { paintLabel }     from './paintLabel'
 import { paintSteering }  from './paintSteering'
@@ -30,10 +29,6 @@ export function paintWidget(
   const th    = themeMin(theme)
 
   switch (widget.type) {
-
-    case 'arc_gauge':
-      paintArcGauge(ctx, widget, value, th, time)
-      break
 
     case 'numeric':
       paintNumeric(ctx, widget, value, unit, th, time)

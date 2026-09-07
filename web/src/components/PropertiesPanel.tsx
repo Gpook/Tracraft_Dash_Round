@@ -1,19 +1,18 @@
 /**
- * PropertiesPanel â€” Ð¿Ñ€Ð°Ð²Ð°Ñ Ð¿Ð°Ð½ÐµÐ»ÑŒ Ð¸Ð½ÑÐ¿ÐµÐºÑ‚Ð¾Ñ€Ð°.
+ * PropertiesPanel — правая панель инспектора.
  *
- * Ð˜Ð¡ÐŸÐ ÐÐ’Ð›Ð•ÐÐ˜Ð¯:
- *  1. Drag/resize ÑÐ±Ñ€Ð¾Ñ: widgetRef (Ð°ÐºÑ‚ÑƒÐ°Ð»ÑŒÐ½Ñ‹Ð¹ Ð¿Ð¾ÑÐ»Ðµ ÐºÐ°Ð¶Ð´Ð¾Ð³Ð¾ Ñ€ÐµÐ½Ð´ÐµÑ€Ð°) +
- *     JSON-ÑÑ€Ð°Ð²Ð½ÐµÐ½Ð¸Ðµ Ñ€ÐµÐ·ÑƒÐ»ÑŒÑ‚Ð°Ñ‚Ð° Ñ Ñ‚ÐµÐºÑƒÑ‰Ð¸Ð¼ Ð²Ð¸Ð´Ð¶ÐµÑ‚Ð¾Ð¼ Ð¿ÐµÑ€ÐµÐ´ onUpdate
- *  2. Shift Light: ÑÐºÑ€Ñ‹Ñ‚Ð° ÑÐµÐºÑ†Ð¸Ñ Signal Ð¸ Mode; dotSize Ñ‚Ð¾Ð»ÑŒÐºÐ¾ Ð´Ð»Ñ arc
- *  3. Warning: ÑƒÐ±Ñ€Ð°Ð½ blinkHz Ð¸Ð· Ð¿Ð°Ð½ÐµÐ»Ð¸
- *  4. Graph: Ñ€ÐµÐ´Ð°ÐºÑ‚Ð¾Ñ€ ÑÐ¸Ð³Ð½Ð°Ð»Ð¾Ð² Ñ direct-onUpdate; props.signals ÑÐºÐ¸Ð¿Ð°ÐµÑ‚ÑÑ Ð² unflattenWidget
- *  5. Bar orientation: Ð°Ð²Ñ‚Ð¾-ÑÐ²Ð¾Ð¿ wâ†”h
+ * ИСПРАВЛЕНИЯ:
+ *  1. Drag/resize сброс: widgetRef (актуальный после каждого рендера) +
+ *     JSON-сравнение результата с текущим виджетом перед onUpdate
+ *  2. Shift Light: скрыта секция Signal и Mode; dotSize только для arc
+ *  3. Warning: убран blinkHz из панели
+ *  4. Graph: редактор сигналов с direct-onUpdate; props.signals скипается в unflattenWidget
+ *  5. Bar orientation: авто-своп w↔h
  */
 
 import { useEffect, useRef } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
-import { useEditorStore, useSelectedWidget } from '@/store'
-import { EM_LADDER_BOLD } from '@/renderer/deviceFont'
+import { useEditorStore, useSelectedWidget } from '@/store'
 import { Widget } from '@/schema/layout'
 
 const SIGNALS = [
@@ -27,7 +26,7 @@ const SIGNALS = [
   'calc.oil_p_margin',
 ]
 
-// â”€â”€â”€ ÐšÐ¾Ñ€Ð½ÐµÐ²Ð¾Ð¹ ÐºÐ¾Ð¼Ð¿Ð¾Ð½ÐµÐ½Ñ‚ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Корневой компонент ───────────────────────────────────────────────────────
 
 export function PropertiesPanel() {
   const selected = useSelectedWidget()
@@ -63,15 +62,15 @@ export function PropertiesPanel() {
               </label>
               <div className="props-hint">
                 {screen.bg
-                  ? 'ÐŸÐµÑ€ÐµÐ¾Ð¿Ñ€ÐµÐ´ÐµÐ»ÑÐµÑ‚ Ñ„Ð¾Ð½ Ñ‚ÐµÐ¼Ñ‹ Ð´Ð»Ñ ÑÑ‚Ð¾Ð³Ð¾ ÑÐºÑ€Ð°Ð½Ð°'
-                  : `ÐÐ°ÑÐ»ÐµÐ´ÑƒÐµÑ‚ Ñ‚ÐµÐ¼Ñƒ (${layout.theme.bg})`}
+                  ? 'Переопределяет фон темы для этого экрана'
+                  : `Наследует тему (${layout.theme.bg})`}
               </div>
               {screen.bg && (
                 <button
                   type="button"
                   onClick={() => setScreenBg(activeScreenIdx, layout.theme.bg)}
                   style={{ fontSize: '11px', padding: '3px 8px', marginTop: '4px' }}
-                >Ð¡Ð±Ñ€Ð¾ÑÐ¸Ñ‚ÑŒ Ðº Ñ‚ÐµÐ¼Ðµ</button>
+                >Сбросить к теме</button>
               )}
             </section>
           </div>
@@ -88,7 +87,7 @@ export function PropertiesPanel() {
           className="btn-danger-sm"
           onClick={() => removeWidget(activeScreenIdx, selectedWidgetId)}
           title="Delete (Del)"
-        >âœ•</button>
+        >✕</button>
       </div>
       <WidgetForm
         key={selected.id}
@@ -99,7 +98,7 @@ export function PropertiesPanel() {
   )
 }
 
-// â”€â”€â”€ Ð¤Ð¾Ñ€Ð¼Ð° â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Форма ────────────────────────────────────────────────────────────────────
 
 interface FormProps { widget: Widget; onUpdate: (w: Widget) => void }
 
@@ -108,15 +107,15 @@ function WidgetForm({ widget, onUpdate }: FormProps) {
     defaultValues: flattenWidget(widget),
   })
 
-  // ÐŸÐ¾Ð»Ð½Ñ‹Ð¹ ÑÐ±Ñ€Ð¾Ñ Ñ‚Ð¾Ð»ÑŒÐºÐ¾ Ð¿Ñ€Ð¸ ÑÐ¼ÐµÐ½Ðµ Ð²Ð¸Ð´Ð¶ÐµÑ‚Ð° (Ð´Ñ€ÑƒÐ³Ð¾Ð¹ id)
+  // Полный сброс только при смене виджета (другой id)
   useEffect(() => { reset(flattenWidget(widget)) }, [widget.id]) // eslint-disable-line
 
-  // â”€â”€ Ð’ÑÐµÐ³Ð´Ð° Ð°ÐºÑ‚ÑƒÐ°Ð»ÑŒÐ½Ð°Ñ ÑÑÑ‹Ð»ÐºÐ° Ð½Ð° Ð²Ð¸Ð´Ð¶ÐµÑ‚ Ð¸Ð· ÑÑ‚Ð¾Ñ€Ð° â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Ð’ÐÐ–ÐÐž: Ð¾Ð±ÑŠÑÐ²Ð»ÐµÐ½Ð° ÐŸÐ•Ð Ð•Ð” Ð²ÑÐµÐ¼Ð¸ useEffect(, [values]) Ñ‡Ñ‚Ð¾Ð±Ñ‹ Ð¾Ð±Ð½Ð¾Ð²Ð»ÑÑ‚ÑŒÑÑ Ñ€Ð°Ð½ÑŒÑˆÐµ!
+  // ── Всегда актуальная ссылка на виджет из стора ──────────────────────────
+  // ВАЖНО: объявлена ПЕРЕД всеми useEffect(, [values]) чтобы обновляться раньше!
   const widgetRef = useRef(widget)
-  useEffect(() => { widgetRef.current = widget })  // no deps â†’ ÐºÐ°Ð¶Ð´Ñ‹Ð¹ Ñ€ÐµÐ½Ð´ÐµÑ€
+  useEffect(() => { widgetRef.current = widget })  // no deps → каждый рендер
 
-  // â”€â”€ Ð¡Ð¸Ð½Ñ…Ñ€Ð¾Ð½Ð¸Ð·Ð°Ñ†Ð¸Ñ rect/z Ð¸Ð· canvas drag/resize â†’ Ð² Ñ„Ð¾Ñ€Ð¼Ñƒ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Синхронизация rect/z из canvas drag/resize → в форму ─────────────────
   const prevRectRef = useRef(widget.rect)
   const prevZRef    = useRef(widget.z ?? 0)
   useEffect(() => {
@@ -130,10 +129,10 @@ function WidgetForm({ widget, onUpdate }: FormProps) {
     prevZRef.current = z
   }, [widget.rect.x, widget.rect.y, widget.rect.w, widget.rect.h, widget.z, setValue])
 
-  // â”€â”€ Live-Ð¾Ð±Ð½Ð¾Ð²Ð»ÐµÐ½Ð¸Ðµ Ñ Ð´Ð²Ð¾Ð¹Ð½Ð¾Ð¹ Ð·Ð°Ñ‰Ð¸Ñ‚Ð¾Ð¹ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  //  1. JSON-ÑÑ€Ð°Ð²Ð½ÐµÐ½Ð¸Ðµ Ð·Ð½Ð°Ñ‡ÐµÐ½Ð¸Ð¹ Ñ„Ð¾Ñ€Ð¼Ñ‹ â†’ Ð½Ðµ Ð¿ÐµÑ€ÐµÐ·Ð°Ð¿ÑƒÑÐºÐ°ÐµÐ¼ ÐµÑÐ»Ð¸ Ñ„Ð¾Ñ€Ð¼Ð° Ð½Ðµ Ð¸Ð·Ð¼ÐµÐ½Ð¸Ð»Ð°ÑÑŒ
-  //  2. JSON-ÑÑ€Ð°Ð²Ð½ÐµÐ½Ð¸Ðµ Ñ€ÐµÐ·ÑƒÐ»ÑŒÑ‚Ð°Ñ‚Ð° Ñ Ð°ÐºÑ‚ÑƒÐ°Ð»ÑŒÐ½Ñ‹Ð¼ Ð²Ð¸Ð´Ð¶ÐµÑ‚Ð¾Ð¼ â†’ drag Ð½Ðµ ÑÐ±Ñ€Ð°ÑÑ‹Ð²Ð°ÐµÑ‚ÑÑ!
-  //     (stale form values, rect.x=110, Ð¿Ð¾ÐºÐ° canvas ÑƒÐ¶Ðµ Ð½Ð° x=120 â†’ SKIP)
+  // ── Live-обновление с двойной защитой ────────────────────────────────────
+  //  1. JSON-сравнение значений формы → не перезапускаем если форма не изменилась
+  //  2. JSON-сравнение результата с актуальным виджетом → drag не сбрасывается!
+  //     (stale form values, rect.x=110, пока canvas уже на x=120 → SKIP)
   const values = useWatch({ control })
   const lastJsonRef = useRef<string>('')
 
@@ -142,28 +141,28 @@ function WidgetForm({ widget, onUpdate }: FormProps) {
     if (json === lastJsonRef.current) return
     lastJsonRef.current = json
 
-    // widgetRef.current Ð¾Ð±Ð½Ð¾Ð²Ð»Ñ‘Ð½ Ð½Ð° ÑÑ‚Ð¾Ð¼ Ð¶Ðµ Ñ€ÐµÐ½Ð´ÐµÑ€Ðµ Ð² ÑÑ„Ñ„ÐµÐºÑ‚Ðµ Ð²Ñ‹ÑˆÐµ
+    // widgetRef.current обновлён на этом же рендере в эффекте выше
     const current = widgetRef.current
     const result  = unflattenWidget(current, values as Record<string, unknown>)
     if (!result) return
 
-    // Bar: ÑÐ¼ÐµÐ½Ð° orientation Ð¼ÐµÐ½ÑÐµÑ‚ Ð¼ÐµÑÑ‚Ð°Ð¼Ð¸ wâ†”h. Ð”ÐµÐ»Ð°ÐµÐ¼ Ð² Ð¾Ð´Ð½Ð¾Ð¼ Ð°Ð¿Ð´ÐµÐ¹Ñ‚Ðµ Ñ
-    // ÑÐ°Ð¼Ð¾Ð¹ Ð¾Ñ€Ð¸ÐµÐ½Ñ‚Ð°Ñ†Ð¸ÐµÐ¹, Ð¸Ð½Ð°Ñ‡Ðµ Ð²Ñ‚Ð¾Ñ€Ð¾Ð¹ onUpdate Ð¿Ñ€Ð¾Ñ‡Ð¸Ñ‚Ð°ÐµÑ‚ ÑƒÑÑ‚Ð°Ñ€ÐµÐ²ÑˆÐ¸Ð¹ widgetRef.
+    // Bar: смена orientation меняет местами w↔h. Делаем в одном апдейте с
+    // самой ориентацией, иначе второй onUpdate прочитает устаревший widgetRef.
     const prevOrient = (current as any).props?.orientation
     const nextOrient = (result  as any).props?.orientation
     if (current.type === 'bar' && prevOrient && nextOrient && prevOrient !== nextOrient) {
       result.rect = { ...result.rect, w: current.rect.h, h: current.rect.w }
     }
 
-    // ÐÐ¸Ñ‡ÐµÐ³Ð¾ Ð½Ðµ Ð¸Ð·Ð¼ÐµÐ½Ð¸Ð»Ð¾ÑÑŒ â€” Ð½Ðµ Ð¿Ð»Ð¾Ð´Ð¸Ð¼ Ð·Ð°Ð¿Ð¸ÑÐ¸ Ð² Ð¸ÑÑ‚Ð¾Ñ€Ð¸Ð¸
+    // Ничего не изменилось — не плодим записи в истории
     if (JSON.stringify(result) === JSON.stringify(current)) return
 
     onUpdate(result)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [values])
 
-  // â”€â”€ Ð ÑƒÑ‡Ð½Ð¾Ð¹ Ð²Ð²Ð¾Ð´ rect/z: ÐºÐ¾Ð¼Ð¼Ð¸Ñ‚ Ð¿Ð¾ blur Ð¸Ð»Ð¸ Enter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Ð–Ð¸Ð²Ð¾Ð¹ Ð¿ÑƒÑ‚ÑŒ Ñ„Ð¾Ñ€Ð¼Ñ‹ rect Ð½Ðµ Ñ‚Ñ€Ð¾Ð³Ð°ÐµÑ‚ (ÑÐ¼. unflattenWidget), Ð¿Ð¾ÑÑ‚Ð¾Ð¼Ñƒ Ð¿Ñ€Ð¸Ð¼ÐµÐ½ÑÐµÐ¼ ÑÐ²Ð½Ð¾.
+  // ── Ручной ввод rect/z: коммит по blur или Enter ──────────────────────────
+  // Живой путь формы rect не трогает (см. unflattenWidget), поэтому применяем явно.
   function commitRect(field: 'x' | 'y' | 'w' | 'h' | 'z', raw: string) {
     const n = Number(raw)
     if (!isFinite(n)) return
@@ -177,7 +176,7 @@ function WidgetForm({ widget, onUpdate }: FormProps) {
     }
   }
 
-  // ÐžÐ±Ð¾Ñ€Ð°Ñ‡Ð¸Ð²Ð°ÐµÐ¼ register Ñ‡Ñ‚Ð¾Ð±Ñ‹ ÑÐ¾Ñ…Ñ€Ð°Ð½Ð¸Ñ‚ÑŒ onBlur ÑÐ°Ð¼Ð¾Ð³Ð¾ RHF Ð¸ Ð´Ð¾Ð±Ð°Ð²Ð¸Ñ‚ÑŒ ÑÐ²Ð¾Ð¹ ÐºÐ¾Ð¼Ð¼Ð¸Ñ‚
+  // Оборачиваем register чтобы сохранить onBlur самого RHF и добавить свой коммит
   function rectField(name: 'rect.x' | 'rect.y' | 'rect.w' | 'rect.h' | 'z',
                      field: 'x' | 'y' | 'w' | 'h' | 'z') {
     const reg = register(name as any, { valueAsNumber: true })
@@ -193,7 +192,7 @@ function WidgetForm({ widget, onUpdate }: FormProps) {
     }
   }
 
-  // Shift light â€” signal Ð²ÑÐµÐ³Ð´Ð° engine.rpm, Ð¼ÐµÐ½ÑÑ‚ÑŒ Ð½Ðµ Ð½ÑƒÐ¶Ð½Ð¾
+  // Shift light — signal всегда engine.rpm, менять не нужно
   const hideSignal = ['label', 'image', 'gforce', 'graph', 'shift_light'].includes(widget.type)
 
   return (
@@ -213,7 +212,7 @@ function WidgetForm({ widget, onUpdate }: FormProps) {
           <label>H<input type="number" {...rectField('rect.h', 'h')} /></label>
         </div>
         <label>Z-order <input type="number" {...rectField('z', 'z')} /></label>
-        <div className="props-hint">Enter / ÐºÐ»Ð¸Ðº Ð²Ð½Ðµ Ð¿Ð¾Ð»Ñ â€” Ð¿Ñ€Ð¸Ð¼ÐµÐ½Ð¸Ñ‚ÑŒ</div>
+        <div className="props-hint">Enter / клик вне поля — применить</div>
       </section>
 
       {/* Signal / Data */}
@@ -222,16 +221,15 @@ function WidgetForm({ widget, onUpdate }: FormProps) {
           <div className="props-section-title">Data</div>
           <label>Signal
             <select {...register('signal')}>
-              <option value="">â€” none â€”</option>
+              <option value="">— none —</option>
               {SIGNALS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </label>
-          <label>Unit <input {...register('unit')} placeholder="km/h, Â°C, barâ€¦" /></label>
+          <label>Unit <input {...register('unit')} placeholder="km/h, °C, bar…" /></label>
         </section>
       )}
 
-      {/* Type-specific ÑÐµÐºÑ†Ð¸Ð¸ */}
-      {widget.type === 'arc_gauge'   && <ArcGaugeFields register={register} />}
+      {/* Type-specific секции */}
       {widget.type === 'numeric'     && <NumericFields register={register} />}
       {widget.type === 'label'       && <LabelFields register={register} />}
       {widget.type === 'bar'         && <BarFields register={register} />}
@@ -245,26 +243,7 @@ function WidgetForm({ widget, onUpdate }: FormProps) {
   )
 }
 
-// â”€â”€â”€ Ð¡ÐµÐºÑ†Ð¸Ð¸ Ð¿Ð¾Ð»ÐµÐ¹ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-function ArcGaugeFields({ register }: { register: any }) {
-  return (
-    <section>
-      <div className="props-section-title">Arc Gauge</div>
-      <div className="props-grid-2">
-        <label>Min<input type="number" {...register('props.min', { valueAsNumber: true })} /></label>
-        <label>Max<input type="number" {...register('props.max', { valueAsNumber: true })} /></label>
-        <label>StartÂ°<input type="number" {...register('props.startAngle', { valueAsNumber: true })} /></label>
-        <label>EndÂ°<input type="number" {...register('props.endAngle', { valueAsNumber: true })} /></label>
-        <label>Thickness<input type="number" {...register('props.thickness', { valueAsNumber: true })} /></label>
-      </div>
-      <label className="checkbox-row"><input type="checkbox" {...register('props.rounded')} /> Rounded caps</label>
-      <label className="checkbox-row"><input type="checkbox" {...register('props.peakHold')} /> Peak hold</label>
-      <label>Color<input type="color" {...register('props.color')} /></label>
-      <label>Track color<input type="color" {...register('props.trackColor')} /></label>
-    </section>
-  )
-}
+// ─── Секции полей ─────────────────────────────────────────────────────────────
 
 function NumericFields({ register }: { register: any }) {
   return (
@@ -272,7 +251,7 @@ function NumericFields({ register }: { register: any }) {
       <div className="props-section-title">Numeric</div>
       <label>Decimals<input type="number" min={0} max={3} {...register('props.decimals', { valueAsNumber: true })} /></label>
       <FontSizeField register={register} />
-      <label>Caption<input {...register('props.caption')} placeholder="OIL, COOLANTâ€¦" /></label>
+      <label>Caption<input {...register('props.caption')} placeholder="OIL, COOLANT…" /></label>
       <label>Align
         <select {...register('props.align')}>
           <option value="left">Left</option>
@@ -319,14 +298,14 @@ function BarFields({ register }: { register: any }) {
           <option value="vertical">Vertical</option>
         </select>
       </label>
-      <div className="props-hint">Wâ†”H auto-swapped on orientation change</div>
+      <div className="props-hint">W↔H auto-swapped on orientation change</div>
       <label>Color<input type="color" {...register('props.color')} /></label>
       <label>Track color<input type="color" {...register('props.trackColor')} /></label>
     </section>
   )
 }
 
-// Mode ÑÐºÑ€Ñ‹Ñ‚ â€” Ð¾Ð¿Ñ€ÐµÐ´ÐµÐ»Ñ‘Ð½ Ð¿Ð°Ð»Ð¸Ñ‚Ñ€Ð¾Ð¹. dotSize Ñ‚Ð¾Ð»ÑŒÐºÐ¾ Ð´Ð»Ñ arc.
+// Mode скрыт — определён палитрой. dotSize только для arc.
 function ShiftLightFields({ register, widget }: { register: any; widget: Widget }) {
   const currentMode: string = (widget as any).props?.mode ?? 'segments'
   return (
@@ -346,9 +325,9 @@ function ShiftLightFields({ register, widget }: { register: any; widget: Widget 
         </label>
       )}
       {currentMode === 'flash' && (
-        <div className="props-hint">Rect 0,0,466,466 Ð´Ð»Ñ full-screen</div>
+        <div className="props-hint">Rect 0,0,466,466 для full-screen</div>
       )}
-      <div className="props-hint">Stages (at, color, blinkHz) â€” JSON export</div>
+      <div className="props-hint">Stages (at, color, blinkHz) — JSON export</div>
     </section>
   )
 }
@@ -364,13 +343,13 @@ function WarningFields({ register }: { register: any }) {
           )}
         </select>
       </label>
-      <label>Label<input {...register('props.label')} placeholder="LOW OIL, HIGH TEMPâ€¦" /></label>
+      <label>Label<input {...register('props.label')} placeholder="LOW OIL, HIGH TEMP…" /></label>
       <label>Trigger below<input type="number" step="0.1" {...register('props.triggerBelow', { valueAsNumber: true })} placeholder="e.g. 1.5" /></label>
       <label>Trigger above<input type="number" step="0.1" {...register('props.triggerAbove', { valueAsNumber: true })} placeholder="e.g. 110" /></label>
       <label>Color<input type="color" {...register('props.color')} /></label>
       <div className="props-hint">
-        ÐŸÐ¾ÑÐ²Ð»ÑÐµÑ‚ÑÑ Ð½Ð° 2 Ñ Ð¿Ñ€Ð¸ ÑÑ€Ð°Ð±Ð°Ñ‚Ñ‹Ð²Ð°Ð½Ð¸Ð¸ Ñ‚Ñ€Ð¸Ð³Ð³ÐµÑ€Ð°.<br />
-        Ð¢Ñ€ÐµÐ±ÑƒÐµÑ‚ Signal + Trigger below/above.
+        Появляется на 2 с при срабатывании триггера.<br />
+        Требует Signal + Trigger below/above.
       </div>
     </section>
   )
@@ -397,30 +376,19 @@ function GForceFields({ register }: { register: any }) {
   )
 }
 
-/**
- * ÐšÐµÐ³Ð»ÑŒ Ð´Ð»Ñ Label Ð¸ Numeric.
- *
- * Ð¡Ð¿Ð¸ÑÐ¾Ðº Ð´Ð¾ÑÑ‚Ð¸Ð¶Ð¸Ð¼Ñ‹Ñ… Ð·Ð½Ð°Ñ‡ÐµÐ½Ð¸Ð¹ Ð¿Ð¾Ð´ÑÐºÐ°Ð·Ñ‹Ð²Ð°ÐµÑ‚ÑÑ Ñ‡ÐµÑ€ÐµÐ· datalist: Ð¿Ñ€Ð¾ÑˆÐ¸Ð²ÐºÐ° Ñ€Ð¸ÑÑƒÐµÑ‚
- * Ð±Ð¸Ñ‚Ð¼Ð°Ð¿Ð½Ñ‹Ð¼Ð¸ ÑˆÑ€Ð¸Ñ„Ñ‚Ð°Ð¼Ð¸ Ð¸ ÑƒÐ¼ÐµÐµÑ‚ Ñ‚Ð¾Ð»ÑŒÐºÐ¾ ÐºÐ¾Ð½ÐµÑ‡Ð½Ñ‹Ð¹ Ð½Ð°Ð±Ð¾Ñ€ Ð²Ñ‹ÑÐ¾Ñ‚, Ð° Ð¿Ñ€Ð¾Ð¼ÐµÐ¶ÑƒÑ‚Ð¾Ñ‡Ð½Ñ‹Ðµ
- * Ð·Ð½Ð°Ñ‡ÐµÐ½Ð¸Ñ Ð¾Ð½Ð° Ð¿Ñ€Ð¸Ð¶Ð¼Ñ‘Ñ‚ Ðº Ð±Ð»Ð¸Ð¶Ð°Ð¹ÑˆÐµÐ¹ ÑÑ‚ÑƒÐ¿ÐµÐ½Ð¸. Ð’Ð²Ð¾Ð´ Ð½Ðµ Ð·Ð°Ð¿Ñ€ÐµÑ‰Ñ‘Ð½ â€” Ð¿Ñ€Ð¾ÑÑ‚Ð¾ Ð²Ð¸Ð´Ð½Ð¾,
- * Ñ‡Ñ‚Ð¾ Ñ€ÐµÐ°Ð»ÑŒÐ½Ð¾ Ð¿Ð¾Ð»ÑƒÑ‡Ð¸Ñ‚ÑÑ Ð½Ð° ÑƒÑÑ‚Ñ€Ð¾Ð¹ÑÑ‚Ð²Ðµ.
- */
+/// Кегль для Label и Numeric. Прошивка масштабирует шрифт дробно, так что
+/// любое значение воспроизводится точно — ограничений по набору размеров нет.
 function FontSizeField({ register }: { register: any }) {
   return (
     <>
       <label>Font size
         <input
-          type="number" min={0} max={200} list="device-font-sizes"
+          type="number" min={0} max={200}
           {...register('props.fontSize', { valueAsNumber: true })}
         />
       </label>
-      <datalist id="device-font-sizes">
-        {EM_LADDER_BOLD.map(v => <option key={v} value={v} />)}
-      </datalist>
       <div className="props-hint">
-        0 = Ð°Ð²Ñ‚Ð¾: Ñ‚ÐµÐºÑÑ‚ Ñ€Ð°ÑÑ‚Ñ‘Ñ‚ Ð²ÑÐ»ÐµÐ´ Ð·Ð° Ñ€Ð°Ð¼ÐºÐ¾Ð¹. Ð£ÑÑ‚Ñ€Ð¾Ð¹ÑÑ‚Ð²Ð¾ ÑƒÐ¼ÐµÐµÑ‚ Ñ‚Ð¾Ð»ÑŒÐºÐ¾
-        ÐºÐµÐ³Ð»Ð¸ {EM_LADDER_BOLD.slice(0, 6).join(', ')}â€¦ â€” Ð¾ÑÑ‚Ð°Ð»ÑŒÐ½Ñ‹Ðµ Ð¿Ñ€Ð¸Ð¶Ð¼ÑƒÑ‚ÑÑ
-        Ðº Ð±Ð»Ð¸Ð¶Ð°Ð¹ÑˆÐµÐ¼Ñƒ.
+        0 = авто: текст растёт вслед за рамкой.
       </div>
     </>
   )
@@ -433,17 +401,17 @@ function SteeringFields({ register }: { register: any }) {
       <label>Color<input type="color" {...register('props.color')} /></label>
       <label>Track color<input type="color" {...register('props.trackColor')} /></label>
       <label>Corner radius<input type="number" min={0} max={20} {...register('props.radius', { valueAsNumber: true })} /></label>
-      <label>Max angle (Â°)<input type="number" min={90} max={1080} step={10} {...register('props.maxAngle', { valueAsNumber: true })} /></label>
+      <label>Max angle (°)<input type="number" min={90} max={1080} step={10} {...register('props.maxAngle', { valueAsNumber: true })} /></label>
       <label>Deadzone<input type="number" min={0} max={0.5} step={0.01} {...register('props.deadzone', { valueAsNumber: true })} /></label>
-      <div className="props-hint">Ð—Ð¾Ð½Ð° Ð½ÐµÑ‡ÑƒÐ²ÑÑ‚Ð²Ð¸Ñ‚ÐµÐ»ÑŒÐ½Ð¾ÑÑ‚Ð¸ Ð²Ð¾ÐºÑ€ÑƒÐ³ Ñ†ÐµÐ½Ñ‚Ñ€Ð°, 0â€¦0.5</div>
+      <div className="props-hint">Зона нечувствительности вокруг центра, 0…0.5</div>
       <label className="checkbox-row"><input type="checkbox" {...register('props.centerMark')} /> Center mark</label>
       <label className="checkbox-row"><input type="checkbox" {...register('props.showValue')} /> Show angle</label>
     </section>
   )
 }
 
-// Graph: min/max/windowSec/lineWidth/fill â€” Ñ‡ÐµÑ€ÐµÐ· RHF register
-//        signals â€” direct onUpdate (Ð¾Ð±Ñ…Ð¾Ð´Ð¸Ð¼ flatten/unflatten Ð´Ð»Ñ Ð¼Ð°ÑÑÐ¸Ð²Ð¾Ð²)
+// Graph: min/max/windowSec/lineWidth/fill — через RHF register
+//        signals — direct onUpdate (обходим flatten/unflatten для массивов)
 function GraphFields({
   register,
   widget,
@@ -488,7 +456,7 @@ function GraphFields({
           <button
             onClick={() => updateSignals(signals.filter((_, j) => j !== i))}
             style={{ background: 'none', border: '1px solid #555', color: '#888', borderRadius: '3px', width: '20px', height: '22px', cursor: 'pointer', fontSize: '10px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >âœ•</button>
+          >✕</button>
         </div>
       ))}
       <button
@@ -515,7 +483,7 @@ function ClockFields({ register }: { register: any }) {
   )
 }
 
-// â”€â”€â”€ Flatten / Unflatten â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Flatten / Unflatten ──────────────────────────────────────────────────────
 
 function flattenWidget(w: Widget): Record<string, unknown> {
   return {
@@ -545,12 +513,12 @@ function flattenProps(props: Record<string, unknown>, prefix = 'props'): Record<
 }
 
 /**
- * Ð§Ð¸Ñ‚Ð°ÐµÑ‚ Ð·Ð½Ð°Ñ‡ÐµÐ½Ð¸Ðµ Ð¿Ð¾ Ð¿ÑƒÑ‚Ð¸ Ñ ÑƒÑ‡Ñ‘Ñ‚Ð¾Ð¼ ÐžÐ‘ÐžÐ˜Ð¥ Ñ„Ð¾Ñ€Ð¼Ð°Ñ‚Ð¾Ð² RHF.
+ * Читает значение по пути с учётом ОБОИХ форматов RHF.
  *
- * react-hook-form Ñ…Ñ€Ð°Ð½Ð¸Ñ‚ _formValues Ð¾Ð´Ð½Ð¾Ð²Ñ€ÐµÐ¼ÐµÐ½Ð½Ð¾ Ð² Ð´Ð²ÑƒÑ… Ð²Ð¸Ð´Ð°Ñ…:
- *   â€¢ Ð¿Ð»Ð¾ÑÐºÐ¾  â€” { 'props.min': 0 }   (ÐºÐ»Ð¾Ð½ defaultValues)
- *   â€¢ Ð²Ð»Ð¾Ð¶ÐµÐ½Ð½Ð¾ â€” { props: { min: 0 } } (ÑÐ¾Ð·Ð´Ð°Ñ‘Ñ‚ÑÑ register() Ñ‡ÐµÑ€ÐµÐ· set())
- * ÐŸÑ€Ð¸Ð¾Ñ€Ð¸Ñ‚ÐµÑ‚ Ð¾Ñ‚Ð´Ð°Ñ‘Ð¼ Ð²Ð»Ð¾Ð¶ÐµÐ½Ð½Ð¾Ð¼Ñƒ: Ð¾Ð½ Ð¾Ð±Ð½Ð¾Ð²Ð»ÑÐµÑ‚ÑÑ Ð¿Ñ€Ð¸ Ð²Ð²Ð¾Ð´Ðµ, Ð¿Ð»Ð¾ÑÐºÐ¸Ð¹ Ð¾ÑÑ‚Ð°Ñ‘Ñ‚ÑÑ Ð¸ÑÑ…Ð¾Ð´Ð½Ñ‹Ð¼.
+ * react-hook-form хранит _formValues одновременно в двух видах:
+ *   • плоско  — { 'props.min': 0 }   (клон defaultValues)
+ *   • вложенно — { props: { min: 0 } } (создаётся register() через set())
+ * Приоритет отдаём вложенному: он обновляется при вводе, плоский остаётся исходным.
  */
 function readValue(values: Record<string, unknown>, path: string): unknown {
   const parts = path.split('.')
@@ -560,7 +528,7 @@ function readValue(values: Record<string, unknown>, path: string): unknown {
     cur = (cur as Record<string, unknown>)[p]
   }
   if (cur !== undefined) return cur
-  return values[path]   // fallback Ð½Ð° Ð¿Ð»Ð¾ÑÐºÐ¸Ð¹ ÐºÐ»ÑŽÑ‡
+  return values[path]   // fallback на плоский ключ
 }
 
 function setPath(obj: Record<string, unknown>, path: string, val: unknown) {
@@ -577,10 +545,10 @@ function setPath(obj: Record<string, unknown>, path: string, val: unknown) {
 
 function unflattenWidget(original: Widget, values: Record<string, unknown>): Widget | null {
   try {
-    // Deep clone â€” Ð²ÑÐµ Ð¾Ñ€Ð¸Ð³Ð¸Ð½Ð°Ð»ÑŒÐ½Ñ‹Ðµ Ð¿Ñ€Ð¾Ð¿Ñ‹ (zones, ticks, stages, signalsâ€¦) ÑÐ¾Ñ…Ñ€Ð°Ð½ÐµÐ½Ñ‹
+    // Deep clone — все оригинальные пропы (zones, ticks, stages, signals…) сохранены
     const w = JSON.parse(JSON.stringify(original)) as Record<string, unknown>
 
-    // ÐœÐ½Ð¾Ð¶ÐµÑÑ‚Ð²Ð¾ Ð¿ÑƒÑ‚ÐµÐ¹-ÐºÐ°Ð½Ð´Ð¸Ð´Ð°Ñ‚Ð¾Ð²: Ð¸Ð· Ð¾Ñ€Ð¸Ð³Ð¸Ð½Ð°Ð»Ð° + Ð²ÑÑ‘ Ñ‡Ñ‚Ð¾ Ñ€ÐµÐ°Ð»ÑŒÐ½Ð¾ ÐµÑÑ‚ÑŒ Ð² Ñ„Ð¾Ñ€Ð¼Ðµ
+    // Множество путей-кандидатов: из оригинала + всё что реально есть в форме
     const keys = new Set(Object.keys(flattenWidget(original)))
     for (const k of Object.keys(values)) if (k.includes('.')) keys.add(k)
     const nestedProps = values['props']
@@ -589,19 +557,19 @@ function unflattenWidget(original: Widget, values: Record<string, unknown>): Wid
     }
 
     for (const key of keys) {
-      // id/type Ð½ÐµÐ¸Ð·Ð¼ÐµÐ½Ð½Ñ‹
+      // id/type неизменны
       if (key === 'id' || key === 'type') continue
-      // rect Ð¸ z Ð¿Ñ€Ð¸Ð½Ð°Ð´Ð»ÐµÐ¶Ð°Ñ‚ ÐºÐ°Ð½Ð²Ðµ (drag/resize) â€” Ñ„Ð¾Ñ€Ð¼Ð° Ð¸Ñ… Ð½Ðµ Ð´Ð¸ÐºÑ‚ÑƒÐµÑ‚.
-      // Ð˜Ð½Ð°Ñ‡Ðµ Ð¾Ñ‚ÑÑ‚Ð°ÑŽÑ‰Ð¸Ðµ Ð·Ð½Ð°Ñ‡ÐµÐ½Ð¸Ñ Ñ„Ð¾Ñ€Ð¼Ñ‹ Ð¾Ñ‚ÐºÐ°Ñ‚Ñ‹Ð²Ð°ÑŽÑ‚ Ð²Ð¸Ð´Ð¶ÐµÑ‚ Ð¿Ñ€Ð¸ Ð¿ÐµÑ€ÐµÑ‚Ð°ÑÐºÐ¸Ð²Ð°Ð½Ð¸Ð¸.
+      // rect и z принадлежат канве (drag/resize) — форма их не диктует.
+      // Иначе отстающие значения формы откатывают виджет при перетаскивании.
       if (key.startsWith('rect.') || key === 'z') continue
-      // props.signals â€” Ð¼Ð°ÑÑÐ¸Ð², Ñ€ÐµÐ´Ð°ÐºÑ‚Ð¸Ñ€ÑƒÐµÑ‚ÑÑ Ð½Ð°Ð¿Ñ€ÑÐ¼ÑƒÑŽ Ð² GraphFields Ñ‡ÐµÑ€ÐµÐ· onUpdate
+      // props.signals — массив, редактируется напрямую в GraphFields через onUpdate
       if (key === 'props.signals') continue
 
       const val = readValue(values, key)
       if (val === undefined) continue
-      // ÐÐ¸ÐºÐ¾Ð³Ð´Ð° Ð½Ðµ Ð¿Ñ€Ð¸ÑÐ²Ð°Ð¸Ð²Ð°ÐµÐ¼ Ð¾Ð±ÑŠÐµÐºÑ‚Ñ‹/Ð¼Ð°ÑÑÐ¸Ð²Ñ‹ Ñ†ÐµÐ»Ð¸ÐºÐ¾Ð¼ â€” Ñ‚Ð¾Ð»ÑŒÐºÐ¾ ÑÐºÐ°Ð»ÑÑ€Ñ‹
+      // Никогда не присваиваем объекты/массивы целиком — только скаляры
       if (typeof val === 'object' && val !== null) continue
-      if (typeof val === 'number' && isNaN(val)) continue     // Ð¿ÑƒÑÑ‚Ð¾Ðµ number-Ð¿Ð¾Ð»Ðµ
+      if (typeof val === 'number' && isNaN(val)) continue     // пустое number-поле
       if (val === '' && key !== 'signal' && key !== 'unit') continue
 
       setPath(w, key, val)

@@ -11,7 +11,7 @@
 
 import { NumericWidget, zoneColor } from '@/schema/layout'
 import { fitFontSize } from './fitText'
-import { fontOf, snapEm } from './deviceFont'
+import { fontOf } from './deviceFont'
 
 // Доли высоты rect, отводимые под caption и unit при автоподгонке
 const CAPTION_BAND = 0.22
@@ -54,15 +54,15 @@ export function paintNumeric(
   }
 
   // ─── Размеры шрифтов ──────────────────────────────────────────────────────
-  // В режиме устройства fontOf() подменяет гарнитуру на метрический аналог
-  // прошивочного FreeSans и прижимает кегль к достижимой ступени.
+  // В режиме устройства fontOf() подменяет гарнитуру на Arial — именно из него
+  // растеризованы шрифты прошивки, поэтому ширины строк совпадают.
   const valueFontTpl = (px: number) => fontOf(px, { bold: true, mono: true })
   const subFontTpl   = (px: number) => fontOf(px)
 
   let valueSize: number
   if (fontSize && fontSize > 0) {
     // Явно заданный размер — уважаем как есть
-    valueSize = snapEm(fontSize, true)
+    valueSize = fontSize
   } else {
     // Автоподгонка: делим высоту между caption / значением / unit
     const captionBand = hasCaption ? rect.h * CAPTION_BAND : 0

@@ -52,18 +52,46 @@ float computeRPM(float t) {
     return lerpf(RPM_REDLINE, RPM_IDLE + 400.0f, smoothstep(0.0f, 1.0f, dropF));
 }
 
-// ─── Педаль тормоза ──────────────────────────────────────────────────────────
+// ─── Педали ──────────────────────────────────────────────────────────────────
 
-float computeBrake(float rpm, float t) {
+/// Пик торможения в конце цикла и он же — точка, с которой начинается отпуск
+/// на выходе из поворота. Одно значение на оба конца делает кривую непрерывной
+/// на стыке циклов.
+constexpr float BRAKE_PEAK    = 0.9f;
+constexpr float BRAKE_RELEASE = 1.2f;   // с, отпускание тормоза
+constexpr float THROTTLE_OPEN = 0.5f;   // с, начало подачи газа
+constexpr float THROTTLE_FULL = 2.2f;   // с, газ полностью открыт
+
+struct Pedals { float brake, accel; };
+
+/**
+ * Положение педалей: одна плавная кривая на цикл, без дрожания.
+ *
+ * Шума здесь нет намеренно. Раньше к обеим педалям примешивались синусы 5 и
+ * 8 Гц, а газ вычислялся как `1 - тормоз`, поэтому наследовал дрожание и от
+ * тормоза, и от оборотов. Правдоподобия это не добавляло: датчик положения
+ * педали шумит на порядок меньше, чем видно на такой отрисовке.
+ *
+ * Формулы совпадают с web/src/mock/signalGenerator.ts — менять только парой,
+ * иначе предпросмотр и устройство разойдутся.
+ */
+Pedals computePedals(float t) {
     const float phase   = fmodf(t, RPM_CYCLE);
     const float riseEnd = RPM_CYCLE - RPM_HOLD - RPM_DROP;
 
+    // Конец цикла: сброс газа и торможение в зону
     if (phase >= riseEnd) {
-        const float brakeF = smoothstep(riseEnd, riseEnd + RPM_DROP, phase);
-        return fminf(1.0f, brakeF * 0.85f + noise(t, 8.0f, 0.05f));
+        const float k = smoothstep(riseEnd, riseEnd + RPM_DROP, phase);
+        return Pedals{BRAKE_PEAK * k, 1.0f - k};
     }
-    const float idleF = 1.0f - smoothstep(RPM_IDLE, RPM_IDLE + 1500.0f, rpm);
-    return fmaxf(0.0f, idleF * 0.15f + noise(t, 5.0f, 0.02f));
+
+    // Выход из поворота: тормоз плавно отпускается с пиковых значений, газ
+    // открывается с небольшим перекрытием — как на трейл-брейкинге
+    const float release = smoothstep(0.0f, BRAKE_RELEASE, phase);
+    return Pedals{
+        BRAKE_PEAK * (1.0f - release),
+        smoothstep(THROTTLE_OPEN, THROTTLE_FULL, phase),
+    };
 }
 
 } // namespace
@@ -89,9 +117,8 @@ void update(float t) {
     const float battery = 13.8f + noise(t, 0.31f, 0.4f);
 
     // Продольная G: разгон плюс, торможение минус
-    const float brake  = computeBrake(rpm, t);
-    const float accel  = fmaxf(0.0f, 1.0f - brake - 0.1f) * smoothstep(RPM_IDLE, 3500.0f, rpm);
-    const float longG  = accel * 0.7f - brake * 1.2f + noise(t, 4.0f, 0.05f);
+    const Pedals ped  = computePedals(t);
+    const float  longG = ped.accel * 0.7f - ped.brake * 1.2f;
 
     // Руль — единый источник для steer.pos и поперечной перегрузки:
     // поворот руля ПОРОЖДАЕТ боковое ускорение, поэтому steer.pos > 0.5 ⟺ imu.ax > 0
@@ -99,9 +126,8 @@ void update(float t) {
     const float steerNorm = clampf(steerRaw / 1.22f, -1.0f, 1.0f);
     const float latG      = 0.95f * steerNorm * smoothstep(40.0f, 95.0f, speed);
 
-    // Педали: плавно, без дрожания
-    const float brakePos = clampf(brake, 0.0f, 1.0f);
-    const float accelPos = clampf(accel, 0.0f, 1.0f);
+    const float brakePos = clampf(ped.brake, 0.0f, 1.0f);
+    const float accelPos = clampf(ped.accel, 0.0f, 1.0f);
 
     // 0 = полностью влево, 0.5 = центр, 1 = полностью вправо
     const float steerPos = clampf(0.5f + 0.42f * steerNorm, 0.0f, 1.0f);

@@ -1,137 +1,95 @@
 #include "text_render.h"
 
-// Шрифты подключаются ТОЛЬКО здесь. Заголовки Adafruit объявляют массивы
-// глифов без static, поэтому включение их в двух единицах трансляции даёт
-// multiple definition на этапе линковки.
-#include "fonts/FreeSans9pt7b.h"
-#include "fonts/FreeSansBold9pt7b.h"
-#include "fonts/FreeSansBold12pt7b.h"
-#include "fonts/FreeSansBold18pt7b.h"
-#include "fonts/FreeSansBold24pt7b.h"
+#include "display_hw.h"
+#include "pins.h"
+
+// Шрифты подключаются ТОЛЬКО здесь: массивы объявлены без static-обёртки в
+// пространстве имён, и включение этих заголовков в двух единицах трансляции
+// дало бы дублирование данных во флеше.
+#include "fonts/AaBoldBig.h"
+#include "fonts/AaBoldCaps.h"
+#include "fonts/AaBoldText.h"
+#include "fonts/AaRegularText.h"
 
 namespace Text {
 
 namespace {
 
-/// Базовые шрифты по возрастанию размера.
-const GFXfont* const kBold[]  = {&FreeSansBold9pt7b, &FreeSansBold12pt7b,
-                                 &FreeSansBold18pt7b, &FreeSansBold24pt7b};
-const GFXfont* const kLight[] = {&FreeSans9pt7b};
+/// Полужирные начерки по убыванию алфавита: цифры, прописные, весь ASCII.
+/// Чем крупнее начерк, тем беднее алфавит — см. FONTS в tools/gen_font.py.
+const AaFont* const kBoldChain[] = {&AaBoldBig, &AaBoldCaps, &AaBoldText};
+constexpr int kBoldCount = sizeof(kBoldChain) / sizeof(kBoldChain[0]);
 
-constexpr int kBoldCount  = sizeof(kBold) / sizeof(kBold[0]);
-constexpr int kLightCount = sizeof(kLight) / sizeof(kLight[0]);
-
-/// Увеличивать сильнее вчетверо бессмысленно: пиксельная лестница на краях
-/// глифа становится заметнее самой буквы.
-constexpr int kMaxScale = 4;
-
-/// Глиф символа или nullptr, если символа в шрифте нет.
-const GFXglyph* glyphOf(const GFXfont* font, char c) {
-    const auto uc = static_cast<uint8_t>(c);
-    if (!font || uc < font->first || uc > font->last) return nullptr;
-    return font->glyph + (uc - font->first);
-}
-
-/// Высота цифры для базового шрифта.
+/// Есть ли в начерке глифы для всех символов строки.
 ///
-/// Берётся из глифа '0': у FreeSans все цифры одной высоты, и это ровно тот
-/// размер, который воспринимается как «размер шрифта» на приборной панели.
-int baseCap(const GFXfont* font) {
-    const GFXglyph* g = glyphOf(font, '0');
-    return g ? g->height : 8;
+/// Пробел и знак 0xC2 из UTF-8-последовательности градуса пропускаются: их
+/// растеризатор всё равно не рисует, и требовать для них глиф значило бы без
+/// причины отбрасывать подходящий начерк.
+bool covers(const AaFont& f, const char* s) {
+    if (!s) return true;
+    for (const char* p = s; *p; ++p) {
+        const auto uc = static_cast<uint8_t>(*p);
+        if (uc == ' ' || uc == 0xC2) continue;
+        if (uc < f.mapFirst || uc > f.mapLast) return false;
+        if (f.map[uc - f.mapFirst] == 0xFF) return false;
+    }
+    return true;
 }
 
 } // namespace
 
 int capPx(const Face& f) {
-    if (!f.font) return 8 * (f.scale ? f.scale : 1);
-    return baseCap(f.font) * (f.scale ? f.scale : 1);
+    if (!f.font) return 0;
+    return Aa::capAt(*f.font, f.scale);
 }
 
-Face pick(int targetCapPx, bool bold) {
-    const GFXfont* const* list = bold ? kBold : kLight;
-    const int count            = bold ? kBoldCount : kLightCount;
-
+Face pick(const char* s, int targetCapPx, bool bold) {
     if (targetCapPx < 1) targetCapPx = 1;
 
-    Face best{list[0], 1};
-    int  bestErr = 1 << 30;
-
-    // Перебираем все комбинации «шрифт x множитель» и берём ближайшую по
-    // высоте. При равной высоте выигрывает меньший множитель, потому что
-    // крупный базовый шрифт всегда чище растянутого мелкого — поэтому
-    // множитель во внутреннем цикле идёт по возрастанию, а строгое < не
-    // позволяет более грубому варианту вытеснить уже найденный.
-    for (int i = count - 1; i >= 0; --i) {
-        const int cap = baseCap(list[i]);
-        if (cap < 1) continue;
-        for (int s = 1; s <= kMaxScale; ++s) {
-            const int err = abs(cap * s - targetCapPx);
-            if (err < bestErr) {
-                bestErr = err;
-                best    = Face{list[i], static_cast<uint8_t>(s)};
-            }
-        }
-    }
-    return best;
-}
-
-int ladder(int* out, int max, bool bold) {
-    const GFXfont* const* list = bold ? kBold : kLight;
-    const int count            = bold ? kBoldCount : kLightCount;
-
-    int n = 0;
-    for (int i = 0; i < count && n < max; ++i) {
-        const int cap = baseCap(list[i]);
-        for (int s = 1; s <= kMaxScale && n < max; ++s) {
-            const int v = cap * s;
-            // Отбрасываем дубликаты: 12pt x2 и 24pt x1 дают одну высоту
-            bool dup = false;
-            for (int k = 0; k < n; ++k) {
-                if (out[k] == v) { dup = true; break; }
-            }
-            if (!dup) out[n++] = v;
-        }
+    if (!bold) {
+        return Face{&AaRegularText, Aa::scaleForCap(AaRegularText, targetCapPx)};
     }
 
-    // Простая сортировка вставками — список короткий
-    for (int i = 1; i < n; ++i) {
-        const int v = out[i];
-        int j = i - 1;
-        while (j >= 0 && out[j] > v) { out[j + 1] = out[j]; --j; }
-        out[j + 1] = v;
+    // Идём от мелкого к крупному и берём первый подходящий. Мелкий выгоднее
+    // вдвойне: уменьшение читает исходные пиксели, поэтому сжимать начерк
+    // 96px до 20px значило бы перебирать 6 КБ на каждый символ подписи.
+    const AaFont* chosen = nullptr;
+    for (int i = kBoldCount - 1; i >= 0; --i) {
+        const AaFont* f = kBoldChain[i];
+        if (!covers(*f, s)) continue;
+        chosen = f;
+        if (static_cast<int>(f->capHeight) >= targetCapPx) break;
     }
-    return n;
+
+    // Покрывающего начерка не нашлось вовсе — строка из символов, которых нет
+    // ни в одном наборе. Рисуем самым полным: часть глифов пропадёт, но это
+    // лучше пустого места, и видно, что данные пришли неожидаемые.
+    if (!chosen) chosen = &AaBoldText;
+
+    return Face{chosen, Aa::scaleForCap(*chosen, targetCapPx)};
 }
 
 int width(const char* s, const Face& f) {
     if (!s || !f.font) return 0;
-    int w = 0;
-    for (const char* p = s; *p; ++p) {
-        const GFXglyph* g = glyphOf(f.font, *p);
-        if (g) w += g->xAdvance;
-    }
-    return w * (f.scale ? f.scale : 1);
+    return Aa::width(*f.font, s, f.scale);
 }
 
 Face fit(const char* s, int maxW, int maxH, bool bold) {
     if (maxW < 1) maxW = 1;
     if (maxH < 1) maxH = 1;
 
-    // Стартуем от ограничения по высоте и спускаемся по лестнице, пока
-    // строка не влезет по ширине.
-    int steps[32];
-    const int n = ladder(steps, 32, bold);
-
-    Face chosen = pick(steps[0], bold);
-    for (int i = n - 1; i >= 0; --i) {
-        if (steps[i] > maxH) continue;
-        const Face cand = pick(steps[i], bold);
-        if (width(s, cand) <= maxW) return cand;
-        chosen = cand;
+    // Сначала упираемся в высоту, затем, если не влезли по ширине, уменьшаем
+    // пропорционально. Второй проход нужен потому, что уменьшение может
+    // перевести на другой базовый начерк с иными пропорциями.
+    int cap = maxH;
+    for (int pass = 0; pass < 2; ++pass) {
+        const Face cand = pick(s, cap, bold);
+        const int  w    = width(s, cand);
+        if (w <= maxW || w == 0) return cand;
+        cap = (cap * maxW) / w;
+        if (cap < 1) cap = 1;
     }
-    // Ни один вариант не влез по ширине — отдаём самый мелкий
-    return pick(steps[0], bold);
+    return pick(s, cap, bold);
 }
 
 void drawBox(Arduino_GFX* g, const char* s,
@@ -139,9 +97,8 @@ void drawBox(Arduino_GFX* g, const char* s,
              HA ha, VA va, const Face& f, uint16_t color) {
     if (!g || !s || !*s || !f.font) return;
 
-    g->setFont(f.font);
-    g->setTextSize(f.scale ? f.scale : 1);
-    g->setTextColor(color);
+    uint16_t* fb = Display::framebuffer();
+    if (!fb) return;
 
     const int tw  = width(s, f);
     const int cap = capPx(f);
@@ -150,32 +107,34 @@ void drawBox(Arduino_GFX* g, const char* s,
     if (ha == HA::Center)     x = bx + (bw - tw) / 2;
     else if (ha == HA::Right) x = bx + bw - tw;
 
-    // Курсор у GFXfont стоит на базовой линии, а не на верхнем краю
+    // Базовая линия ставится по высоте цифр, а не по межстрочному интервалу
     int baseline = by + cap;
     if (va == VA::Mid)         baseline = by + (bh + cap) / 2;
     else if (va == VA::Bottom) baseline = by + bh;
 
-    g->setCursor(x, baseline);
-    g->print(s);
+    Aa::drawString(fb, LCD_WIDTH, LCD_HEIGHT, *f.font, s, x, baseline,
+                   f.scale, color);
 }
 
 void drawCentered(Arduino_GFX* g, const char* s, int cx, int cy,
                   const Face& f, uint16_t color) {
     if (!g || !s || !*s || !f.font) return;
 
-    g->setFont(f.font);
-    g->setTextSize(f.scale ? f.scale : 1);
-    g->setTextColor(color);
+    uint16_t* fb = Display::framebuffer();
+    if (!fb) return;
 
     const int tw  = width(s, f);
     const int cap = capPx(f);
 
-    g->setCursor(cx - tw / 2, cy + cap / 2);
-    g->print(s);
+    Aa::drawString(fb, LCD_WIDTH, LCD_HEIGHT, *f.font, s,
+                   cx - tw / 2, cy + cap / 2, f.scale, color);
 }
 
 void useBuiltin(Arduino_GFX* g) {
-    if (g) g->setFont(nullptr);
+    if (g) {
+        g->setFont(nullptr);
+        g->setTextSize(2);
+    }
 }
 
 } // namespace Text

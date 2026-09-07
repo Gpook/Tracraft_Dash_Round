@@ -7,7 +7,7 @@
  */
 
 import { useEditorStore } from '@/store'
-import { Widget, ArcGaugeWidget, NumericWidget, ShiftLightWidget, LabelWidget, BarWidget, GForceWidget, GraphWidget } from '@/schema/layout'
+import { Widget, NumericWidget, ShiftLightWidget, LabelWidget, BarWidget, GForceWidget, GraphWidget } from '@/schema/layout'
 import { newId } from '@/store'
 
 interface Template {
@@ -32,15 +32,13 @@ const TEMPLATES: Template[] = [
   {
     id: 'speed-focus',
     name: 'Speed Focus',
-    description: 'Large RPM arc + centered speed',
+    description: 'Shift lights + centered speed',
     icon: '◉',
     widgets: () => [
-      { type: 'arc_gauge', rect: { x: 8, y: 8, w: 450, h: 450 }, z: 0, signal: 'engine.rpm',
-        props: { min: 0, max: 8000, startAngle: 135, endAngle: 405, thickness: 22, rounded: true,
-          color: '#FFFFFF', trackColor: '#1C1C1E',
-          zones: [{ from: 6600, to: 7200, color: '#FFCC00' }, { from: 7200, to: 8000, color: '#FF3B30' }],
-          ticks: { major: 1000, minor: 500, labels: true, labelDivisor: 1000 } },
-      } satisfies Omit<ArcGaugeWidget, 'id'>,
+        { type: 'numeric', rect: { x: 133, y: 86, w: 200, h: 60 }, z: 1, signal: 'engine.rpm',
+          unit: 'rpm', props: { decimals: 0, align: 'center', showUnit: true, colorFromZones: true,
+            zones: [{ from: 6600, to: 7200, color: '#FFCC00' }, { from: 7200, to: 8000, color: '#FF3B30' }] },
+        } satisfies Omit<NumericWidget, 'id'>,
       { type: 'shift_light', rect: { x: 133, y: 46, w: 200, h: 14 }, z: 1, signal: 'engine.rpm',
         props: { mode: 'segments', stages: [
           { at: 5500, color: '#30D158' }, { at: 6600, color: '#FFCC00' }, { at: 7200, color: '#FF3B30', blinkHz: 6 },
@@ -95,12 +93,10 @@ const TEMPLATES: Template[] = [
     description: 'RPM arc + shift + 3 data fields',
     icon: '🏎',
     widgets: () => [
-      { type: 'arc_gauge', rect: { x: 8, y: 8, w: 450, h: 450 }, z: 0, signal: 'engine.rpm',
-        props: { min: 0, max: 8000, startAngle: 135, endAngle: 405, thickness: 20, rounded: true,
-          color: '#FF3B30', trackColor: '#1C1C1E',
-          zones: [{ from: 6600, to: 7200, color: '#FFCC00' }, { from: 7200, to: 8000, color: '#FF3B30' }],
-          ticks: { major: 2000, labels: true, labelDivisor: 1000 } },
-      } satisfies Omit<ArcGaugeWidget, 'id'>,
+        { type: 'numeric', rect: { x: 133, y: 86, w: 200, h: 60 }, z: 1, signal: 'engine.rpm',
+          unit: 'rpm', props: { decimals: 0, align: 'center', showUnit: true, colorFromZones: true,
+            zones: [{ from: 6600, to: 7200, color: '#FFCC00' }, { from: 7200, to: 8000, color: '#FF3B30' }] },
+        } satisfies Omit<NumericWidget, 'id'>,
       { type: 'shift_light', rect: { x: 133, y: 46, w: 200, h: 12 }, z: 2, signal: 'engine.rpm',
         props: { mode: 'segments', stages: [
           { at: 5500, color: '#30D158' }, { at: 6200, color: '#FFCC00' },
