@@ -39,6 +39,9 @@ uint32_t s_drawSumUs   = 0;
 uint32_t s_drawMaxUs   = 0;
 uint32_t s_flushSumUs  = 0;
 uint32_t s_flushMaxUs  = 0;
+/// Из времени отправки — сколько простояли в ожидании шины. Разница между
+/// отправкой и ожиданием это подготовка данных, то есть чтение PSRAM.
+uint32_t s_waitSumUs   = 0;
 
 /// Автопереключение экранов, если тач не поднялся: без него устройство
 /// показывало бы только первый экран и выглядело мёртвым.
@@ -429,6 +432,7 @@ void loop() {
 
     s_drawSumUs  += drawUs;
     s_flushSumUs += flushUs;
+    s_waitSumUs  += Display::busWaitedUs();
     if (drawUs  > s_drawMaxUs)  s_drawMaxUs  = drawUs;
     if (flushUs > s_flushMaxUs) s_flushMaxUs = flushUs;
 
@@ -443,18 +447,27 @@ void loop() {
     ++s_frames;
     if (now - s_lastFpsMs >= 1000) {
         const uint32_t f = s_frames ? s_frames : 1;
-        Serial.printf("[perf] %lu FPS | рендер %lu мс (макс %lu) | отправка %lu мс (макс %lu)\n",
+        // «шина» — ожидание DMA, «данные» — подготовка пикселей. Сумма равна
+        // отправке: это две половины конвейера, и по их соотношению видно,
+        // что ускорять дальше.
+        const uint32_t waitUs = s_waitSumUs / f;
+        const uint32_t flushUs = s_flushSumUs / f;
+        Serial.printf("[perf] %lu FPS | рендер %lu мс (макс %lu) | отправка %lu мс "
+                      "(макс %lu) = шина %lu мс + данные %lu мс\n",
                       static_cast<unsigned long>(s_frames),
                       static_cast<unsigned long>(s_drawSumUs / f / 1000),
                       static_cast<unsigned long>(s_drawMaxUs / 1000),
-                      static_cast<unsigned long>(s_flushSumUs / f / 1000),
-                      static_cast<unsigned long>(s_flushMaxUs / 1000));
+                      static_cast<unsigned long>(flushUs / 1000),
+                      static_cast<unsigned long>(s_flushMaxUs / 1000),
+                      static_cast<unsigned long>(waitUs / 1000),
+                      static_cast<unsigned long>((flushUs > waitUs ? flushUs - waitUs : 0) / 1000));
 
         s_frames     = 0;
         s_drawSumUs  = 0;
         s_drawMaxUs  = 0;
         s_flushSumUs = 0;
         s_flushMaxUs = 0;
+        s_waitSumUs  = 0;
         s_lastFpsMs  = now;
     }
 }

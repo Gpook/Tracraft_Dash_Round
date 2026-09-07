@@ -1,5 +1,6 @@
 #include "display_hw.h"
 #include "pins.h"
+#include "qspi_dma.h"
 
 #include <esp_heap_caps.h>
 
@@ -32,9 +33,12 @@ public:
     }
 };
 
-Arduino_DataBus* s_bus    = nullptr;
-Arduino_GFX*     s_panel  = nullptr;
-PsramCanvas*     s_canvas = nullptr;
+/// Шина своя, а не библиотечная Arduino_ESP32QSPI — см. qspi_dma.h: там
+/// отправка пикселей идёт конвейером, а не по очереди с их подготовкой.
+/// Тип конкретный, а не Arduino_DataBus*, чтобы читать счётчик ожидания.
+Arduino_ESP32QSPI_DMA* s_bus    = nullptr;
+Arduino_GFX*           s_panel  = nullptr;
+PsramCanvas*           s_canvas = nullptr;
 
 /// Копия кадра с одной только неподвижной частью экрана: фон и виджеты,
 /// которые не зависят от сигналов. Позволяет не перерисовывать их каждый кадр,
@@ -51,7 +55,7 @@ bool begin() {
     pinMode(LCD_EN, OUTPUT);
     digitalWrite(LCD_EN, HIGH);
 
-    s_bus = new Arduino_ESP32QSPI(
+    s_bus = new Arduino_ESP32QSPI_DMA(
         LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
 
     // В GFX 1.6.7 у обоих драйверов нет параметра IPS — примеры LilyGo
@@ -184,6 +188,13 @@ void flushRows(int y0, int h) {
     // отправит её одним writePixels — см. Arduino_TFT::draw16bitRGBBitmap.
     s_panel->draw16bitRGBBitmap(0, y0, fb + static_cast<size_t>(y0) * LCD_WIDTH,
                                 LCD_WIDTH, h);
+}
+
+uint32_t busWaitedUs() {
+    if (!s_bus) return 0;
+    const uint32_t v = s_bus->waitedUs();
+    s_bus->resetWaited();
+    return v;
 }
 
 void setBrightness(uint8_t v) {
