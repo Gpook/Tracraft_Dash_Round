@@ -1,172 +1,331 @@
 /**
  * Генератор синтетических сигналов для предпросмотра редактора.
- * Все сигналы имитируют реальное поведение автомобиля на трек-сессии.
+ *
+ * Модель — круг по трассе, а не абстрактные пилы. Задана таблица поворотов, из
+ * неё выводится всё остальное: профиль скорости, педали, перегрузки, передача,
+ * обороты, температура шин. Поэтому сигналы согласованы между собой — руль,
+ * боковая перегрузка и нагрев наружных шин приходят одновременно, как в жизни.
+ *
+ * Функция чистая: значения зависят только от t. Это важно в двух местах.
+ * Во-первых, редактор можно скрести ползунком в обе стороны. Во-вторых, ровно
+ * та же математика продублирована в src/sim_signals.cpp — при интегрировании
+ * состояния предпросмотр и устройство разошлись бы после первого рассинхрона.
+ *
+ * ЛЮБАЯ правка формул здесь обязана повторяться в sim_signals.cpp.
  */
 
 export type SignalValues = Record<string, number>
 
 // ─── Вспомогательные ──────────────────────────────────────────────────────────
 
+function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v
+}
+
 function smoothstep(a: number, b: number, x: number): number {
-  const t = Math.max(0, Math.min(1, (x - a) / (b - a)))
+  const t = clamp((x - a) / (b - a), 0, 1)
   return t * t * (3 - 2 * t)
 }
 
 function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * Math.max(0, Math.min(1, t))
+  return a + (b - a) * clamp(t, 0, 1)
 }
 
 function noise(t: number, freq: number, amp: number): number {
   return amp * Math.sin(t * freq * 2 * Math.PI)
 }
 
-// ─── RPM: пилообразная форма — разгон до отсечки, 200мс зависание, сброс ─────
-
-const RPM_IDLE   = 1200
-const RPM_REDLINE = 7400   // чуть выше последнего порога 7200 → гарантирует мигание
-const RPM_CYCLE  = 7.0     // секунд на один цикл
-const RPM_HOLD   = 0.20    // секунд на удержание при отсечке
-const RPM_DROP   = 0.35    // секунд на сброс газа
-
-function computeRPM(t: number): number {
-  const phase = t % RPM_CYCLE
-  const riseEnd  = RPM_CYCLE - RPM_HOLD - RPM_DROP
-
-  if (phase < riseEnd) {
-    // Плавный разгон с подхватом в середине оборотов
-    const f = phase / riseEnd
-    const curved = f < 0.6
-      ? smoothstep(0, 0.6, f) * 0.65          // набор в нижнем диапазоне
-      : 0.65 + smoothstep(0.6, 1, f) * 0.35   // агрессивный подхват к отсечке
-    return lerp(RPM_IDLE, RPM_REDLINE, curved)
-  } else if (phase < riseEnd + RPM_HOLD) {
-    // Удержание на отсечке (ограничитель) — с небольшим дрожанием
-    return RPM_REDLINE + noise(t, 22, 60)
-  } else {
-    // Быстрый сброс и откат к холостым
-    const dropF = (phase - riseEnd - RPM_HOLD) / RPM_DROP
-    return lerp(RPM_REDLINE, RPM_IDLE + 400, smoothstep(0, 1, dropF))
-  }
+/// Колокол единичной высоты. Основа профиля поворота: гладкий, с нулевой
+/// производной на краях, поэтому склейка поворотов не даёт переломов.
+function bell(x: number): number {
+  return Math.exp(-x * x)
 }
 
-// ─── Педали ──────────────────────────────────────────────────────────────────
-
-/// Пик торможения в конце цикла и он же — точка, с которой начинается отпуск
-/// на выходе из поворота. Одно значение на оба конца делает кривую непрерывной
-/// на стыке циклов.
-const BRAKE_PEAK    = 0.9
-const BRAKE_RELEASE = 1.2   // с, отпускание тормоза на выходе из поворота
-const THROTTLE_OPEN = 0.5   // с, момент начала подачи газа
-const THROTTLE_FULL = 2.2   // с, момент полностью открытого газа
+// ─── Трасса ───────────────────────────────────────────────────────────────────
 
 /**
- * Положение педалей: одна плавная кривая на цикл, без дрожания.
+ * Круг: 78 секунд, девять поворотов и главная прямая.
  *
- * Шума здесь нет намеренно. Раньше к обеим педалям примешивались синусы 5 и
- * 8 Гц, а газ вычислялся как `1 - тормоз`, поэтому наследовал дрожание и от
- * тормоза, и от оборотов. При 60 кадрах в секунду это выглядело рваным.
- * Правдоподобия шум не добавлял: датчик положения педали шумит на порядок
- * меньше, чем видно на такой отрисовке.
+ * Прямая получается сама — это участок, где ни один колокол не дотягивается.
+ * Между T9 (65 с) и T1 (7 с следующего круга) остаётся около 17 секунд, и на
+ * них машина успевает разогнаться до отсечки в пятой передаче.
  *
- * Фазы привязаны к тем же границам, что RPM, поэтому педали, обороты и
- * продольная перегрузка согласованы между собой. Обе кривые собраны из
- * smoothstep, то есть на стыках фаз производная нулевая — переломов нет.
+ * dir   — знак поворота: +1 вправо, −1 влево (совпадает со знаком steer.pos)
+ * grip  — требование к сцеплению 0..1, оно же глубина торможения
+ * width — половина ширины колокола в секундах: чем меньше, тем резче поворот
  */
-function computePedals(t: number): { brake: number; accel: number } {
-  const phase = t % RPM_CYCLE
-  const riseEnd = RPM_CYCLE - RPM_HOLD - RPM_DROP
+const LAP_TIME = 78.0
 
-  // Конец цикла: сброс газа и торможение в зону
-  if (phase >= riseEnd) {
-    const k = smoothstep(riseEnd, riseEnd + RPM_DROP, phase)
-    return { brake: BRAKE_PEAK * k, accel: 1 - k }
-  }
+const CORNERS: { t: number; dir: number; grip: number; width: number }[] = [
+  { t:  7.0, dir: +1.00, grip: 0.92, width: 2.2 },  // T1  правая шпилька после прямой
+  { t: 13.5, dir: -0.55, grip: 0.45, width: 2.8 },  // T2  быстрый левый
+  { t: 19.0, dir: -0.95, grip: 0.85, width: 2.0 },  // T3  левая шпилька
+  { t: 27.0, dir: +0.45, grip: 0.35, width: 4.5 },  // T4  длинный правый вираж
+  { t: 36.0, dir: +0.90, grip: 0.72, width: 1.5 },  // T5  шикана, правая
+  { t: 39.0, dir: -0.90, grip: 0.72, width: 1.5 },  // T6  шикана, левая
+  { t: 47.0, dir: -0.60, grip: 0.55, width: 3.5 },  // T7  затяжной левый
+  { t: 57.0, dir: +1.00, grip: 0.95, width: 2.0 },  // T8  самая тугая правая
+  { t: 65.0, dir: +0.35, grip: 0.28, width: 2.5 },  // T9  изгиб перед прямой
+]
 
-  // Выход из поворота: тормоз плавно отпускается с пиковых значений, газ
-  // открывается с небольшим перекрытием — как на трейл-брейкинге
-  const release = smoothstep(0, BRAKE_RELEASE, phase)
-  return {
-    brake: BRAKE_PEAK * (1 - release),
-    accel: smoothstep(THROTTLE_OPEN, THROTTLE_FULL, phase),
-  }
+const V_MAX = 194.0   // км/ч на главной прямой
+const V_MIN = 42.0    // км/ч в самой тугой шпильке
+
+/// Расстояние до поворота с учётом того, что круг замкнут: T1 виден и в конце
+/// круга, иначе на главной прямой был бы разрыв профиля.
+function lapDelta(t: number, tc: number): number {
+  let d = (t % LAP_TIME) - tc
+  if (d > LAP_TIME / 2) d -= LAP_TIME
+  if (d < -LAP_TIME / 2) d += LAP_TIME
+  return d
 }
 
-// ─── Главная функция сигналов ──────────────────────────────────────────────────
+/**
+ * Загрузка поворотами в момент t.
+ *
+ * lag и spread сдвигают и расширяют колокола. При нулевых значениях это
+ * мгновенная нагрузка (нужна для скорости и руля), при положительных —
+ * тепловой отклик шины: резина продолжает греться и после вершины поворота.
+ * Свёртка колокола с экспонентой отклика — это снова колокол, сдвинутый и
+ * расширенный, поэтому запаздывание считается тем же кодом за один проход.
+ */
+function cornerLoad(t: number, lag = 0, spread = 1): number {
+  let sum = 0
+  for (const c of CORNERS) {
+    sum += c.grip * bell(lapDelta(t, c.t + lag) / (c.width * spread))
+  }
+  return clamp(sum, 0, 1)
+}
+
+/// То же, но со знаком поворота: −1 (полностью влево) … +1 (полностью вправо).
+function cornerSteer(t: number, lag = 0, spread = 1): number {
+  let sum = 0
+  for (const c of CORNERS) {
+    sum += c.dir * c.grip * bell(lapDelta(t, c.t + lag) / (c.width * spread))
+  }
+  return clamp(sum, -1, 1)
+}
+
+/// Скорость: максимум на прямой, минимум в самом тугом повороте.
+function speedAt(t: number): number {
+  return V_MAX - (V_MAX - V_MIN) * cornerLoad(t)
+}
+
+// ─── Трансмиссия ──────────────────────────────────────────────────────────────
+
+const RPM_IDLE    = 1150
+const RPM_REDLINE = 7400
+
+/// Скорость на отсечке в каждой передаче, км/ч. В пятой она чуть ниже V_MAX,
+/// поэтому на прямой обороты заходят за последний порог шифт-лайта (7200) и он
+/// успевает моргнуть отсечкой.
+const GEAR_TOP = [58, 88, 122, 158, 195]
+
+/// Передача по скорости. Переключение вверх на отсечке — как при быстрой езде.
+function gearAt(speed: number): number {
+  for (let i = 0; i < GEAR_TOP.length; ++i) {
+    if (speed < GEAR_TOP[i] * 0.995) return i
+  }
+  return GEAR_TOP.length - 1
+}
+
+/**
+ * Обороты из скорости и передачи.
+ *
+ * Разрыв на переключении сделан намеренно: настоящий тахометр так и падает.
+ * Он же оживляет шифт-лайт — тот набирает шкалу заново в каждой передаче
+ * вместо одной длинной пилы за круг.
+ */
+function rpmAt(speed: number): number {
+  const g = gearAt(speed)
+  return Math.max(RPM_IDLE, RPM_REDLINE * (speed / GEAR_TOP[g]))
+}
+
+// ─── Педали ───────────────────────────────────────────────────────────────────
+
+/// Плечо численной производной скорости. 0.25 с достаточно мелко, чтобы
+/// поймать вход в шпильку, и достаточно крупно, чтобы не ловить ступеньки.
+const DV_DT = 0.25
+
+const G_ACCEL_FULL = 0.55   // g при полностью открытом газе
+const G_BRAKE_FULL = 1.15   // g при полном торможении
+
+/**
+ * Положение педалей из профиля скорости.
+ *
+ * Педали не задаются отдельной кривой, а выводятся из того, как меняется
+ * скорость: замедление — это тормоз, ускорение — газ. Поэтому они не могут
+ * разойтись с продольной перегрузкой и с оборотами.
+ *
+ * Шума здесь нет намеренно: датчик положения педали шумит на порядок меньше,
+ * чем видно на такой отрисовке, а дрожание при 60 кадрах выглядело рваным.
+ */
+function pedalsAt(t: number): { brake: number; accel: number; longG: number } {
+  // км/ч за секунду → g
+  const dv = (speedAt(t + DV_DT) - speedAt(t - DV_DT)) / (2 * DV_DT)
+  const longG = dv / 3.6 / 9.81
+
+  const brake = clamp(-longG / G_BRAKE_FULL, 0, 1)
+
+  // На прямой скорость уже максимальна и ускорения нет, но газ в полу —
+  // иначе на самом длинном участке круга педаль показывала бы ноль.
+  const fromG   = clamp(longG / G_ACCEL_FULL, 0, 1)
+  const atSpeed = smoothstep(0.72, 0.94, speedAt(t) / V_MAX)
+  const accel   = Math.max(fromG, atSpeed) * (1 - brake)
+
+  return { brake, accel, longG }
+}
+
+// ─── Температура шин ──────────────────────────────────────────────────────────
+
+const T_AMBIENT   = 24.0   // °C, холодная резина в боксе
+const T_WORKING   = 76.0   // °C, средняя рабочая при спокойном темпе
+const WARMUP_SEC  = 95.0   // за сколько секунд шины выходят на режим
+
+/// Тепловой отклик резины: пик нагрева приходит после вершины поворота и
+/// размазан по времени. Подставляется в cornerLoad как lag и spread.
+const THERMAL_LAG    = 2.6
+const THERMAL_SPREAD = 2.4
+
+/// Тяга на выходе греет задние колёса позже, чем боковое скольжение — передние.
+const TRACTION_LAG = THERMAL_LAG * 2.2
+
+const LAT_GAIN      = 13.0  // °C прибавки нагруженному борту
+const FRONT_GAIN    = 12.0  // °C прибавки переду от торможения и руления
+const REAR_GAIN     = 9.0   // °C прибавки заду от тяги
+
+/**
+ * Профиль по секторам. Индексы 0..3 идут от НАРУЖНОГО плеча к ВНУТРЕННЕМУ.
+ *
+ * camber — отрицательный развал: на прямой внутреннее плечо в пятне контакта
+ * работает больше и греется сильнее.
+ * shoulder — в повороте нагруженное колесо кренится на наружное плечо, и
+ * профиль частично переворачивается. Именно это соотношение и смотрят, когда
+ * подбирают развал: если внутреннее плечо горячее даже в поворотах, развала
+ * слишком много.
+ */
+const CAMBER_SHAPE   = [-1.0, -0.34, +0.34, +1.0]
+const SHOULDER_SHAPE = [+1.0, +0.38, -0.38, -1.0]
+const CAMBER_GAIN    = 7.0
+const SHOULDER_GAIN  = 11.0
+
+/// Индивидуальный разброс по углам, °C. Идеально симметричной машины не бывает.
+const CORNER_TRIM = { fl: +1.5, fr: -0.8, rl: +0.4, rr: -1.2 }
+
+type TireTemps = Record<string, number>
+
+/**
+ * Температуры шин: 4 колеса × 4 сектора плюс среднее по каждому колесу.
+ *
+ * Логика: общий прогрев за круг-полтора, сверху нагрев от текущей работы
+ * (боковая нагрузка на борт, торможение на перед, тяга на зад), внутри колеса
+ * распределение по секторам от развала и от переклада на наружное плечо.
+ */
+function tireTemps(t: number): TireTemps {
+  // Общий прогрев от холодной резины к рабочей
+  const base = lerp(T_AMBIENT, T_WORKING, smoothstep(0, WARMUP_SEC, t))
+
+  // Запаздывающие нагрузки: тепло идёт за работой, а не мгновенно
+  const heat     = cornerLoad(t, THERMAL_LAG, THERMAL_SPREAD)
+  const steer    = cornerSteer(t, THERMAL_LAG, THERMAL_SPREAD)
+  const traction = cornerLoad(t, TRACTION_LAG, THERMAL_SPREAD)
+
+  // Поворот вправо (steer > 0) переносит вес на ЛЕВЫЙ борт — он и греется
+  const load = {
+    fl: Math.max(0, +steer), fr: Math.max(0, -steer),
+    rl: Math.max(0, +steer), rr: Math.max(0, -steer),
+  }
+
+  // Ось: перед греется рулением и торможением, зад — тягой на выходе
+  const axle = { fl: FRONT_GAIN * heat, fr: FRONT_GAIN * heat,
+                 rl: REAR_GAIN * traction, rr: REAR_GAIN * traction }
+
+  const out: TireTemps = {}
+  for (const c of ['fl', 'fr', 'rl', 'rr'] as const) {
+    const centre = base
+      + LAT_GAIN * load[c] * (c[0] === 'f' ? 1.0 : 0.82)
+      + axle[c]
+      + CORNER_TRIM[c]
+      + noise(t, 0.09, 0.6)
+
+    let sum = 0
+    for (let s = 0; s < 4; ++s) {
+      const delta = CAMBER_GAIN * CAMBER_SHAPE[s]
+                  + SHOULDER_GAIN * SHOULDER_SHAPE[s] * load[c]
+      const v = centre + delta
+      out[`tire.${c}.t${s + 1}`] = v
+      sum += v
+    }
+    out[`tire.${c}.avg`] = sum / 4
+  }
+  return out
+}
+
+// ─── Главная функция сигналов ─────────────────────────────────────────────────
 
 export function generateSignals(t: number): SignalValues {
-  const rpm = computeRPM(t)
+  const speed = speedAt(t)
+  const rpm   = rpmAt(speed)
+  const gear  = gearAt(speed)
 
-  // Скорость: интегрируем из оборотов с небольшим лагом
-  const speed = Math.max(0, rpm * 0.022 - 26 + noise(t, 0.3, 3))
+  const { brake, accel, longG } = pedalsAt(t)
+
+  // Руль и боковая перегрузка из одного источника: поворот руля ПОРОЖДАЕТ
+  // боковое ускорение, поэтому steer.pos > 0.5 ⟺ imu.ax > 0
+  const steerNorm = cornerSteer(t)
+  const latG      = 1.15 * steerNorm * smoothstep(30, 90, speed)
+
+  // 0 = полностью влево, 0.5 = центр, 1 = полностью вправо
+  const steerPos = clamp(0.5 + 0.45 * steerNorm, 0, 1)
 
   // Температура ОЖ: прогрев от 20 до 92 °C за первые 45 с
   const coolant = Math.min(93, 20 + 73 * smoothstep(0, 45, t)) + noise(t, 0.04, 0.8)
 
   // Давление масла: 3–6 бар в норме, каждые 15 с — провал 200 мс до 0.5 бар
   const oilNormal = 3.0 + (rpm / RPM_REDLINE) * 3.0 + noise(t, 2.1, 0.15)
-  const oilCycle  = t % 15                    // 15-секундный цикл
-  const dipActive = oilCycle > 14.8           // последние 200 мс цикла
+  const dipActive = t % 15 > 14.8
   const oilP = dipActive ? 0.5 : Math.max(2.8, oilNormal)
 
-  // EGT: греется на высоких оборотах
-  const egt = 300 + 650 * smoothstep(2000, 6500, rpm) + noise(t, 3.1, 40)
-
-  // Нагрузка двигателя (%)
-  const load = Math.min(100, 40 + 60 * smoothstep(2500, 7000, rpm))
-
-  // Борт. напряжение
-  const battery = 13.8 + noise(t, 0.31, 0.4)
-
-  // ── G-сила (реалистичная трек-симуляция) ────────────────────────────────────
-  // Продольная: положительная при разгоне, отрицательная при торможении
-  const { brake, accel } = computePedals(t)
-  const longG = accel * 0.7 - brake * 1.2
-
-  // ── Руль — единый источник для steer.pos и поперечной перегрузки ──────────
-  // Физически поворот руля ПОРОЖДАЕТ боковое ускорение, поэтому оба сигнала
-  // считаются из одной величины: steer.pos > 0.5  ⟺  imu.ax > 0.
-  const steerRaw  = Math.sin(t * 0.44) + 0.22 * Math.sin(t * 1.31)
-  const steerNorm = Math.max(-1, Math.min(1, steerRaw / 1.22))   // −1 (влево) … +1 (вправо)
-
-  // Поперечная G: пропорциональна углу руля, но только на скорости
-  const latG = 0.95 * steerNorm * smoothstep(40, 95, speed)
-
-  const brakePos = Math.max(0, Math.min(1, brake))
-  const accelPos = Math.max(0, Math.min(1, accel))
-
-  // 0 = полностью влево, 0.5 = центр, 1 = полностью вправо
-  const steerClamped = Math.max(0, Math.min(1, 0.5 + 0.42 * steerNorm))
-
-  // ── Engine timing / MAP / IAT ─────────────────────────────────────────────
-  const engineMap = 30 + load * 0.7 + noise(t, 1.2, 3)
-  const engineTiming = 12 + 14 * smoothstep(1500, 6000, rpm) - 4 * smoothstep(6000, 7400, rpm)
-  const engineIat = 25 + noise(t, 0.07, 2)
   const oilT = Math.min(110, 40 + 70 * smoothstep(0, 120, t)) + noise(t, 0.05, 1)
+
+  // Нагрузка двигателя: на прямой газ в полу, в повороте почти закрыт
+  const load = clamp(8 + 92 * accel, 0, 100)
+
+  const egt = 300 + 650 * smoothstep(0.2, 0.95, accel) * smoothstep(2500, 6500, rpm)
+            + noise(t, 3.1, 40)
+
+  const engineMap    = 30 + load * 0.7 + noise(t, 1.2, 3)
+  const engineTiming = 12 + 14 * smoothstep(1500, 6000, rpm) - 4 * smoothstep(6000, 7400, rpm)
+  const engineIat    = 25 + noise(t, 0.07, 2)
+  const battery      = 13.8 + noise(t, 0.31, 0.4)
 
   return {
     // Engine
-    'engine.rpm':      rpm,
+    'engine.rpm':       rpm,
     'engine.coolant_t': coolant,
-    'engine.load':     load,
-    'engine.map':      engineMap,
-    'engine.timing':   engineTiming,
-    'engine.iat':      engineIat,
+    'engine.load':      load,
+    'engine.map':       engineMap,
+    'engine.timing':    engineTiming,
+    'engine.iat':       engineIat,
     // Vehicle
-    'veh.speed':       speed,
+    'veh.speed':        speed,
+    'veh.gear':         gear + 1,
     // Sensors
-    'sensor.oil_p':    oilP,
-    'sensor.oil_t':    oilT,
-    'sensor.egt':      egt,
+    'sensor.oil_p':     oilP,
+    'sensor.oil_t':     oilT,
+    'sensor.egt':       egt,
     // System
-    'sys.battery':     battery,
+    'sys.battery':      battery,
     // IMU
-    'imu.ax':          latG,
-    'imu.ay':          longG,
+    'imu.ax':           latG,
+    'imu.ay':           longG,
     // Pedals
-    'pedal.brake':     brakePos,
-    'pedal.accel':     accelPos,
+    'pedal.brake':      brake,
+    'pedal.accel':      accel,
     // Steering (0 = full left, 0.5 = centre, 1 = full right)
-    'steer.pos':       steerClamped,
+    'steer.pos':        steerPos,
+    // Tyres: 4 колеса × 4 сектора (t1 наружное плечо … t4 внутреннее) + среднее
+    ...tireTemps(t),
     // Calculated
     'calc.oil_p_margin': oilP - Math.max(0.8, rpm / 2000),
   }

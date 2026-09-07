@@ -151,6 +151,26 @@ const PALETTE: PaletteItem[] = [
     }),
   },
   {
+    type: 'tire_temp', label: 'Tire Temp', icon: '🌡',
+    defaultWidget: () => ({
+      type: 'tire_temp',
+      rect: { x: 143, y: 133, w: 180, h: 200 },
+      z: 1,
+      props: {
+        prefix: 'tire',
+        min: 40,
+        max: 110,
+        showValue: true,
+        showLabel: false,
+        gapX: 18,
+        gapY: 14,
+        radius: 4,
+        sectorGap: 1,
+        trackColor: '#1C1C1E',
+      },
+    }),
+  },
+  {
     type: 'clock', label: 'Clock', icon: '🕐',
     defaultWidget: () => ({
       type: 'clock',

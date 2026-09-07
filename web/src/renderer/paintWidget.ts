@@ -6,6 +6,7 @@ import { Widget, Theme, SignalId } from '@/schema/layout'
 import { paintNumeric }   from './paintNumeric'
 import { paintLabel }     from './paintLabel'
 import { paintSteering }  from './paintSteering'
+import { paintTireTemp }  from './paintTireTemp'
 import { paintShiftLight } from './paintShiftLight'
 import { paintGForce }    from './paintGForce'
 import { paintWarning }   from './paintWarning'
@@ -87,6 +88,12 @@ export function paintWidget(
       paintSteering(ctx, widget, pos, th)
       break
     }
+
+    case 'tire_temp':
+      // Сигналы не берутся из widget.signal: их двадцать, и виджет собирает
+      // имена сам из префикса — см. paintTireTemp.
+      paintTireTemp(ctx, widget, signals, th)
+      break
 
     case 'clock': {
       const { rect, props } = widget

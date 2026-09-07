@@ -641,6 +641,56 @@
           "id": "numeric-22"
         }
       ]
+    },
+    {
+      "id": "screen-tyres",
+      "name": "Tyres",
+      "widgets": [
+        {
+          "id": "label-tyres",
+          "type": "label",
+          "rect": {
+            "x": 133,
+            "y": 44,
+            "w": 200,
+            "h": 26
+          },
+          "z": 0,
+          "signal": "",
+          "unit": "",
+          "props": {
+            "text": "TYRE TEMP",
+            "align": "center",
+            "fontSize": 20,
+            "color": "#6E6E73"
+          }
+        },
+        {
+          "id": "tiretemp-1",
+          "type": "tire_temp",
+          "rect": {
+            "x": 133,
+            "y": 84,
+            "w": 200,
+            "h": 300
+          },
+          "z": 1,
+          "signal": "",
+          "unit": "",
+          "props": {
+            "prefix": "tire",
+            "min": 40,
+            "max": 110,
+            "showValue": true,
+            "showLabel": true,
+            "gapX": 18,
+            "gapY": 14,
+            "radius": 4,
+            "sectorGap": 1,
+            "trackColor": "#1C1C1E"
+          }
+        }
+      ]
     }
   ]
 }

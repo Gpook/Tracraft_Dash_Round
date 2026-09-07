@@ -18,6 +18,7 @@ function iconOf(w: Widget): string {
     case 'graph':     return '📈'
     case 'gforce':    return '⊕'
     case 'steering':  return '⇄'
+    case 'tire_temp': return '🌡'
     case 'clock':     return '🕐'
     case 'lap_timer': return '⏱'
     case 'warning':   return '⚠'
@@ -38,6 +39,7 @@ function titleOf(w: Widget): string {
     case 'warning':     return w.props.label || 'Warning'
     case 'graph':       return 'Graph'
     case 'gforce':      return 'G-Force'
+    case 'tire_temp':   return 'Tire Temp'
     case 'clock':       return 'Clock'
     case 'lap_timer':   return 'Lap Timer'
     default:            return w.signal ?? w.type

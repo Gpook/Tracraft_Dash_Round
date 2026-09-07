@@ -122,7 +122,7 @@
       "properties": {
         "id": { "$ref": "#/$defs/slug" },
         "type": {
-          "enum": ["needle_gauge", "bar", "numeric", "label", "shift_light", "warning", "graph", "gforce", "steering", "image"]
+          "enum": ["needle_gauge", "bar", "numeric", "label", "shift_light", "warning", "graph", "gforce", "steering", "tire_temp", "image"]
         },
         "rect": { "$ref": "#/$defs/rect" },
         "z": { "type": "integer", "default": 0 },
@@ -342,6 +342,28 @@
                 "showValue": { "type": "boolean", "default": false, "description": "Цифры угла под полосой." },
                 "maxAngle": { "type": "number", "default": 450, "description": "Угол в градусах при полном отклонении, только для подписи." },
                 "deadzone": { "type": "number", "minimum": 0, "maximum": 0.5, "default": 0, "description": "Зона нечувствительности вокруг центра." }
+              }
+            }
+          }
+        },
+        {
+          "title": "tire_temp — температура шин по секторам",
+          "description": "Четыре шины по местам колёс, в каждой 4 вертикальных сектора по ширине протектора. Сигналы не перечисляются по одному (их двадцать), а собираются из префикса: prefix.УГОЛ.tСЕКТОР, где угол — fl, fr, rl, rr, а сектор 1 — НАРУЖНОЕ плечо и 4 — ВНУТРЕННЕЕ. Правый борт рисуется зеркально, чтобы внутренние плечи смотрели к центру виджета.",
+          "properties": {
+            "type": { "const": "tire_temp" },
+            "props": {
+              "type": "object",
+              "properties": {
+                "prefix": { "type": "string", "default": "tire", "description": "Префикс сигналов: prefix.fl.t1 … prefix.rr.t4" },
+                "min": { "type": "number", "default": 40, "description": "°C нижней границы шкалы — синий." },
+                "max": { "type": "number", "default": 110, "description": "°C верхней границы шкалы — красный. Середина диапазона зелёная: это рабочая температура." },
+                "showValue": { "type": "boolean", "default": true, "description": "Среднее по колесу цифрами под шиной." },
+                "showLabel": { "type": "boolean", "default": false, "description": "Подписи углов FL/FR/RL/RR над шинами." },
+                "gapX": { "type": "integer", "minimum": 0, "default": 18, "description": "Зазор между бортами, px." },
+                "gapY": { "type": "integer", "minimum": 0, "default": 14, "description": "Зазор между осями, px." },
+                "radius": { "type": "integer", "minimum": 0, "default": 4, "description": "Скругление углов шины, px." },
+                "sectorGap": { "type": "integer", "minimum": 0, "default": 1, "description": "Зазор между секторами, px. В нём проступает trackColor." },
+                "trackColor": { "$ref": "#/$defs/color" }
               }
             }
           }

@@ -18,11 +18,15 @@ import { Widget } from '@/schema/layout'
 const SIGNALS = [
   'engine.rpm', 'engine.coolant_t', 'engine.load',
   'engine.map', 'engine.timing', 'engine.iat',
-  'veh.speed',
+  'veh.speed', 'veh.gear',
   'sensor.oil_p', 'sensor.oil_t', 'sensor.egt',
   'sys.battery',
   'imu.ax', 'imu.ay',
   'pedal.brake', 'pedal.accel', 'steer.pos',
+  // Средние по колёсам. Отдельные секторы (tire.fl.t1 … tire.rr.t4) в список
+  // не вошли: их двадцать, и выбирать их по одному незачем — виджет Tire Temp
+  // собирает имена сам из префикса. А среднее пригодится в графике и цифрах.
+  'tire.fl.avg', 'tire.fr.avg', 'tire.rl.avg', 'tire.rr.avg',
   'calc.oil_p_margin',
 ]
 
@@ -193,7 +197,9 @@ function WidgetForm({ widget, onUpdate }: FormProps) {
   }
 
   // Shift light — signal всегда engine.rpm, менять не нужно
-  const hideSignal = ['label', 'image', 'gforce', 'graph', 'shift_light'].includes(widget.type)
+  // tire_temp тоже без поля signal: его двадцать сигналов собираются из
+  // префикса, отдельного «главного» среди них нет.
+  const hideSignal = ['label', 'image', 'gforce', 'graph', 'shift_light', 'tire_temp'].includes(widget.type)
 
   return (
     <form className="props-form" onSubmit={e => e.preventDefault()}>
@@ -237,6 +243,7 @@ function WidgetForm({ widget, onUpdate }: FormProps) {
       {widget.type === 'warning'     && <WarningFields register={register} />}
       {widget.type === 'gforce'      && <GForceFields register={register} />}
       {widget.type === 'steering'    && <SteeringFields register={register} />}
+      {widget.type === 'tire_temp'   && <TireTempFields register={register} />}
       {widget.type === 'graph'       && <GraphFields register={register} widget={widget} onUpdate={onUpdate} />}
       {widget.type === 'clock'       && <ClockFields register={register} />}
     </form>
@@ -405,6 +412,32 @@ function SteeringFields({ register }: { register: any }) {
       <div className="props-hint">Зона нечувствительности вокруг центра, 0…0.5</div>
       <label className="checkbox-row"><input type="checkbox" {...register('props.centerMark')} /> Center mark</label>
       <label className="checkbox-row"><input type="checkbox" {...register('props.showValue')} /> Show angle</label>
+    </section>
+  )
+}
+
+function TireTempFields({ register }: { register: any }) {
+  return (
+    <section>
+      <div className="props-section-title">Tire Temp</div>
+      <label>Signal prefix<input {...register('props.prefix')} /></label>
+      <div className="props-hint">Имена собираются как prefix.fl.t1 … prefix.rr.t4</div>
+      <div className="props-grid-2">
+        <label>Min °C<input type="number" step={5} {...register('props.min', { valueAsNumber: true })} /></label>
+        <label>Max °C<input type="number" step={5} {...register('props.max', { valueAsNumber: true })} /></label>
+      </div>
+      <div className="props-hint">Min — синий, середина — зелёный, Max — красный</div>
+      <div className="props-grid-2">
+        <label>Gap X<input type="number" min={0} max={80} {...register('props.gapX', { valueAsNumber: true })} /></label>
+        <label>Gap Y<input type="number" min={0} max={80} {...register('props.gapY', { valueAsNumber: true })} /></label>
+      </div>
+      <div className="props-grid-2">
+        <label>Corner radius<input type="number" min={0} max={20} {...register('props.radius', { valueAsNumber: true })} /></label>
+        <label>Sector gap<input type="number" min={0} max={6} {...register('props.sectorGap', { valueAsNumber: true })} /></label>
+      </div>
+      <label>Track color<input type="color" {...register('props.trackColor')} /></label>
+      <label className="checkbox-row"><input type="checkbox" {...register('props.showValue')} /> Show average</label>
+      <label className="checkbox-row"><input type="checkbox" {...register('props.showLabel')} /> Show corner labels</label>
     </section>
   )
 }

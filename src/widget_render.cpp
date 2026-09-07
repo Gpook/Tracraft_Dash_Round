@@ -380,6 +380,196 @@ void paintSteering(const Frame& f, JsonObjectConst w, const R& r, float pos) {
     }
 }
 
+// ─── tire_temp ───────────────────────────────────────────────────────────────
+
+/**
+ * Шкала температуры: синий → красный через голубой, зелёный, жёлтый, оранжевый.
+ *
+ * Зелёный посажен в середину диапазона намеренно: это рабочая температура, и
+ * «всё зелёное» должно читаться как «всё в порядке». Синее — резина не
+ * прогрелась, красное — перегрев.
+ *
+ * Стопы совпадают с SCALE в paintTireTemp.ts — менять только парой.
+ */
+uint16_t tireColor(float n01) {
+    struct Stop { float p; uint8_t r, g, b; };
+    static constexpr Stop S[] = {
+        { 0.00f,  10,  60, 200 },   // синий
+        { 0.22f,   0, 190, 235 },   // голубой
+        { 0.44f,  20, 205,  90 },   // зелёный
+        { 0.64f, 235, 210,  20 },   // жёлтый
+        { 0.82f, 250, 140,  15 },   // оранжевый
+        { 1.00f, 240,  45,  40 },   // красный
+    };
+    constexpr int N = sizeof(S) / sizeof(S[0]);
+
+    const float p = clampf(n01, 0.0f, 1.0f);
+
+    int i = 0;
+    while (i < N - 2 && p > S[i + 1].p) ++i;
+
+    const float t = (p - S[i].p) / (S[i + 1].p - S[i].p);
+    const int r = S[i].r + static_cast<int>(lroundf((S[i + 1].r - S[i].r) * t));
+    const int g = S[i].g + static_cast<int>(lroundf((S[i + 1].g - S[i].g) * t));
+    const int b = S[i].b + static_cast<int>(lroundf((S[i + 1].b - S[i].b) * t));
+
+    return static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+}
+
+/// Горизонтальный отступ контура скруглённого угла. dy отсчитывается от края
+/// шины внутрь: 0 — самая крайняя строка, где вырез максимален.
+int roundInset(int dy, int rad) {
+    if (rad <= 0 || dy >= rad) return 0;
+    const float k = static_cast<float>(rad - dy);
+    return rad - static_cast<int>(lroundf(sqrtf(static_cast<float>(rad) * rad - k * k)));
+}
+
+/**
+ * Сектор шины.
+ *
+ * В Arduino_GFX нет отсечения по контуру, поэтому у наружных секторов крайние
+ * строки поджимаются под скругление вручную. Середина сектора при этом уходит
+ * одним вызовом: скругление задевает только первые и последние rad строк, а их
+ * единицы — заливать построчно всю высоту было бы вдесятеро дороже без всякой
+ * разницы в картинке.
+ */
+void fillSector(Arduino_GFX* g, int x, int y, int w, int h,
+                int rad, bool roundLeft, bool roundRight, uint16_t col) {
+    if (w <= 0 || h <= 0) return;
+
+    // Средние секторы скругление не касается — прямоугольник целиком
+    if (rad <= 0 || (!roundLeft && !roundRight)) {
+        g->fillRect(x, y, w, h, col);
+        return;
+    }
+
+    const int cap = rad < h / 2 ? rad : h / 2;
+
+    if (h - cap * 2 > 0) g->fillRect(x, y + cap, w, h - cap * 2, col);
+
+    for (int dy = 0; dy < cap; ++dy) {
+        const int ins = roundInset(dy, rad);
+        const int x0  = roundLeft  ? x + ins     : x;
+        const int x1  = roundRight ? x + w - ins : x + w;
+        if (x1 <= x0) continue;
+        g->fillRect(x0, y + dy,         x1 - x0, 1, col);
+        g->fillRect(x0, y + h - 1 - dy, x1 - x0, 1, col);
+    }
+}
+
+/**
+ * Температура шин по секторам.
+ *
+ * Четыре шины стоят по местам колёс, как вид на машину сверху. Каждая — это
+ * вертикальный прямоугольник, поделённый на 4 вертикальных сектора по ширине
+ * протектора, и каждый сектор красится своей температурой.
+ *
+ * Правый борт зеркалится: сектор с ВНУТРЕННИМ плечом всегда смотрит к центру
+ * виджета. Иначе пришлось бы держать в голове, что у левой шины внутреннее
+ * плечо справа, а у правой слева, и картинка перестала бы читаться с одного
+ * взгляда — а в ней весь смысл.
+ *
+ * Соотношение плеч — то, ради чего это и смотрят: если внутренние секторы
+ * горячее наружных даже в поворотах, развала слишком много.
+ *
+ * Раскладка повторяет paintTireTemp.ts.
+ */
+void paintTireTemp(const Frame& f, JsonObjectConst w, const R& r) {
+    JsonObjectConst p = w["props"];
+    auto* g = f.gfx;
+
+    const char* prefix = pS(p, "prefix", "tire");
+    const float mn   = pF(p, "min", 40.0f);
+    const float mx   = pF(p, "max", 110.0f);
+    const float span = (mx - mn) != 0.0f ? (mx - mn) : 1.0f;
+
+    const bool showValue = pB(p, "showValue", true);
+    const bool showLabel = pB(p, "showLabel", false);
+    const int  gapX   = pI(p, "gapX", 18);
+    const int  gapY   = pI(p, "gapY", 14);
+    const int  secGap = pI(p, "sectorGap", 1);
+
+    const int tileW = (r.w - gapX) / 2;
+    const int tileH = (r.h - gapY) / 2;
+    if (tileW < 6 || tileH < 10) return;
+
+    const int t26 = tileH * 26 / 100;
+    const int t20 = tileH * 20 / 100;
+    const int textH  = showValue ? (t26 < 15 ? t26 : 15) : 0;
+    const int labelH = showLabel ? (t20 < 11 ? t20 : 11) : 0;
+
+    int tireH = tileH - textH - labelH;
+    if (tireH < 6) tireH = 6;
+
+    int rad = pI(p, "radius", 4);
+    if (rad > tileW / 2) rad = tileW / 2;
+    if (rad > tireH / 2) rad = tireH / 2;
+
+    const uint16_t track = pC(p, "trackColor", 0x18E3);
+    const int      secW  = (tileW - secGap * 3) / 4;
+    if (secW <= 0) return;
+
+    /// mirror — правый борт: секторы выкладываются справа налево.
+    struct Spec { const char* key; const char* label; uint8_t col, row; bool mirror; };
+    static constexpr Spec SPECS[4] = {
+        { "fl", "FL", 0, 0, false },
+        { "fr", "FR", 1, 0, true  },
+        { "rl", "RL", 0, 1, false },
+        { "rr", "RR", 1, 1, true  },
+    };
+
+    char id[Signals::kMaxIdLen];
+    char buf[12];
+
+    for (const Spec& s : SPECS) {
+        const int ox = r.x + s.col * (tileW + gapX);
+        const int oy = r.y + s.row * (tileH + gapY);
+
+        if (showLabel) {
+            drawBoxText(g, s.label, ox, oy, tileW, labelH, "center", VA::Top,
+                        labelH * 85 / 100, Layout::themeMuted(), false);
+        }
+
+        const int ty = oy + labelH;
+
+        // Дорожка под секторами: она же проступает в зазорах между ними
+        g->fillRoundRect(ox, ty, tileW, tireH, rad, track);
+
+        float sum  = 0.0f;
+        int   seen = 0;
+
+        for (int i = 0; i < 4; ++i) {
+            // Зеркалим правый борт: внутреннее плечо смотрит к центру виджета
+            const int idx = s.mirror ? 3 - i : i;
+            snprintf(id, sizeof id, "%s.%s.t%d", prefix, s.key, idx + 1);
+
+            // Нет сигнала — остаётся дорожка, чтобы отсутствие данных было видно
+            if (!Signals::has(id)) continue;
+
+            const float v = Signals::get(id);
+            sum += v;
+            ++seen;
+
+            fillSector(g, ox + i * (secW + secGap), ty, secW, tireH, rad,
+                       i == 0, i == 3, tireColor((v - mn) / span));
+        }
+
+        if (showValue) {
+            // Среднее по тем секторам, что реально пришли: при частично
+            // подключённых датчиках цифра остаётся осмысленной, а не падает
+            // вдвое от делённых на четыре двух значений.
+            if (seen > 0) {
+                snprintf(buf, sizeof buf, "%d\u00B0", static_cast<int>(lroundf(sum / seen)));
+            } else {
+                snprintf(buf, sizeof buf, "-");
+            }
+            drawBoxText(g, buf, ox, ty + tireH, tileW, textH, "center", VA::Bottom,
+                        textH * 82 / 100,
+                        seen > 0 ? Layout::themeFg() : Layout::themeMuted(), false);
+        }
+    }
+}
+
 // ─── shift_light ─────────────────────────────────────────────────────────────
 
 /// Дуга режима arc. Значения совпадают с paintShiftLight.ts — менять только
@@ -983,6 +1173,10 @@ void paintWidget(const Frame& f, JsonObjectConst w, Part part = Part::All) {
         // Отсутствующий сигнал = руль по центру. Общий fallback в 0 здесь не
         // подходит: 0 — это законное «полностью влево».
         paintSteering(f, w, r, sigId && Signals::has(sigId) ? value : 0.5f);
+    }
+    else if (strcmp(type, "tire_temp")   == 0) {
+        // Сигналы не из w["signal"]: их двадцать, имена собираются из префикса
+        paintTireTemp(f, w, r);
     }
     else paintPlaceholder(f, r, type);
 }

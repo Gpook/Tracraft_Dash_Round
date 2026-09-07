@@ -65,6 +65,7 @@ export type WidgetType =
   | 'graph'
   | 'gforce'
   | 'steering'
+  | 'tire_temp'
   | 'image'
   | 'clock'
   | 'lap_timer'
@@ -174,6 +175,28 @@ export interface SteeringProps {
 }
 export interface SteeringWidget extends WidgetBase { type: 'steering'; props: SteeringProps }
 
+// tire_temp — температура шин: четыре колеса по местам, в каждом 4 сектора
+//
+// Сигналы не перечисляются по одному (их 20), а собираются из префикса:
+//   `${prefix}.${угол}.t${сектор}` — например tire.fl.t1 … tire.rr.t4
+// Угол: fl, fr, rl, rr. Сектор: 1 = НАРУЖНОЕ плечо … 4 = ВНУТРЕННЕЕ.
+//
+// Рисовка правого борта зеркалится, чтобы внутренние плечи смотрели к центру
+// виджета: так картинка совпадает с видом на машину сверху.
+export interface TireTempProps {
+  prefix?: string          // префикс сигналов; default 'tire'
+  min?: number             // °C нижней границы шкалы (синий); default 40
+  max?: number             // °C верхней границы шкалы (красный); default 110
+  showValue?: boolean      // среднее по колесу цифрами; default true
+  showLabel?: boolean      // подписи углов (FL/FR/RL/RR); default false
+  gapX?: number            // зазор между бортами, px; default 18
+  gapY?: number            // зазор между осями, px; default 14
+  radius?: number          // скругление углов шины, px; default 4
+  sectorGap?: number       // зазор между секторами, px; default 1
+  trackColor?: Color       // фон шины под секторами
+}
+export interface TireTempWidget extends WidgetBase { type: 'tire_temp'; props: TireTempProps }
+
 // needle_gauge — круглый циферблат со стрелкой
 export interface NeedleGaugeProps {
   min: number
@@ -220,6 +243,7 @@ export type Widget =
   | GraphWidget
   | GForceWidget
   | SteeringWidget
+  | TireTempWidget
   | ImageWidget
   | ClockWidget
   | LapTimerWidget
