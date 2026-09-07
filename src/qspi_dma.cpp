@@ -423,38 +423,35 @@ void Arduino_ESP32QSPI_DMA::writeBytes(uint8_t* data, uint32_t len) {
 }
 
 /**
- * Отправка пикселей кадра — конвейер.
+ * Отправка пикселей кадра — прямой DMA из PSRAM.
  *
- * Порядок операций тут и есть весь смысл класса. В библиотечной версии на
- * каждый кусок шло: заполнить буфер, запустить передачу, дождаться её конца.
- * Процессор и шина работали по очереди, и кадр стоил сумму их времён.
+ * Фреймбуфер хранится pre-swapped: пиксели уже в big-endian порядке байт
+ * (то, что ожидает панель CO5300). Поэтому writePixels больше не нужен ни
+ * fillSwapped, ни промежуточный SRAM-буфер — tx_buffer указывает прямо в
+ * PSRAM, GDMA читает оттуда и гонит данные в SPI. CPU в критическом пути
+ * не участвует.
  *
- * Здесь ожидание предыдущей передачи сдвинуто ПОСЛЕ заполнения следующего
- * буфера. Пока DMA читает буфер A, процессор готовит буфер B; ждать приходится
- * только разницу, а не полное время передачи. Кадр стоит max(подготовка,
- * передача).
+ * Почему это работает на ESP32-S3:
+ *   - GDMA поддерживает PSRAM как источник (в отличие от старого ESP32).
+ *   - spi_bus_initialize(..., SPI_DMA_CH_AUTO) выбирает GDMA.
+ *   - tx_buffer из PSRAM проходит проверку check_trans_valid в ESP-IDF 5.x.
+ *   - 4-байтовое выравнивание: chunk = 8192 px = 16384 байт, делится на 4. OK.
  *
- * Транзакция _tranExt при этом никогда не меняется во время активной передачи:
- * поля правятся строго между pollEnd() и pollStart(). Меняется только тот
- * буфер, который в этот момент не читает DMA, — за это отвечает чередование
- * slot.
+ * _waitedUs теперь меряет чистое время DMA-передачи. В логе будет:
+ *   отправка ~10 мс = шина ~10 мс + данные 0 мс
+ * вместо прежнего:
+ *   отправка ~23 мс = шина 0 мс + данные ~23 мс
  */
 void Arduino_ESP32QSPI_DMA::writePixels(uint16_t* data, uint32_t len) {
     csLow();
 
-    bool    first    = true;   // первая транзакция задаёт команду и адрес
-    bool    inFlight = false;  // есть незавершённая передача
-    uint8_t slot     = 0;      // какой буфер заполняем
+    bool first    = true;   // первая транзакция задаёт команду и адрес
+    bool inFlight = false;  // есть незавершённая передача
 
     while (len) {
-        const uint32_t l   = (len > kChunkPixels) ? kChunkPixels : len;
-        uint32_t*      buf = _buf[slot];
+        const uint32_t l = (len > kChunkPixels) ? kChunkPixels : len;
 
-        // Заполняем свободный буфер. Здесь и происходит совмещение: DMA в это
-        // время ещё отдаёт предыдущий кусок.
-        fillSwapped(buf, data, l);
-
-        // И только теперь ждём шину.
+        // Ждём предыдущую передачу ПЕРЕД тем, как менять поля транзакции.
         if (inFlight) {
             const uint32_t t0 = micros();
             pollEnd();
@@ -468,20 +465,20 @@ void Arduino_ESP32QSPI_DMA::writePixels(uint16_t* data, uint32_t len) {
             _tranExt.base.addr  = 0x003C00;
             first               = false;
         } else {
-            // Продолжение того же потока пикселей: команда и адрес не нужны,
-            // переменные поля обнулены в begin().
+            // Продолжение того же потока пикселей: команда и адрес не нужны.
             _tranExt.base.flags = SPI_TRANS_MODE_QIO | SPI_TRANS_VARIABLE_CMD |
                                   SPI_TRANS_VARIABLE_ADDR | SPI_TRANS_VARIABLE_DUMMY;
         }
-        _tranExt.base.tx_buffer = buf;
-        _tranExt.base.length    = l << 4;
+
+        // Pre-swapped данные прямо в PSRAM — GDMA читает их без участия CPU.
+        _tranExt.base.tx_buffer = data;
+        _tranExt.base.length    = l << 4;  // пикселей × 16 бит
 
         pollStart();
         inFlight = true;
 
         data += l;
         len -= l;
-        slot ^= 1;
     }
 
     if (inFlight) {

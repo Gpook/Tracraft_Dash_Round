@@ -1,8 +1,10 @@
 #include "display_hw.h"
+#include "gfx_util.h"
 #include "pins.h"
 #include "qspi_dma.h"
 
 #include <esp_heap_caps.h>
+#include <string.h>
 
 namespace Display {
 
@@ -30,6 +32,47 @@ public:
         _framebuffer = static_cast<uint16_t*>(
             heap_caps_aligned_alloc(16, bytes, MALLOC_CAP_SPIRAM));
         return _framebuffer != nullptr;
+    }
+
+    // ─── Pre-swapped storage ──────────────────────────────────────────────
+    //
+    // Проблема: writePixels читал фреймбуфер из PSRAM, переставлял байты в
+    // каждом пикселе и писал в DMA-буфер в SRAM — CPU-нагрузка ~23 мс на кадр,
+    // которая ни с чем не перекрывалась.
+    //
+    // Решение: хранить пиксели в PSRAM уже в порядке байт панели (big-endian).
+    // Тогда writePixels пускает DMA прямо с указателя на PSRAM — нулевая
+    // CPU-нагрузка в пути данных.
+    //
+    // Цена: каждый примитив GFX хранит swap16(color) вместо color. Одна
+    // инструкция на пиксель против чтения всего кадра из PSRAM — выгодно.
+    // aa_font при чтении фона для смешивания разворачивает байты обратно.
+    //
+    // Перехватывать надо ВСЕ четыре виртуальных метода записи Arduino_Canvas.
+    // Одних writePixelPreclipped и writeFillRectPreclipped не хватает: быстрые
+    // линии — отдельная ветка, и через неё идёт очень много отрисовки
+    // (fillCircle внутри GFX построен на writeFastVLine, туда же рамки,
+    // сетки графика, треугольники). Пропуск этой ветки и разваливал цвета.
+    //
+    // Каждый override делегирует в базовую реализацию с уже переставленным
+    // цветом: так наследуется вся логика отсечения и поворота, а нам остаётся
+    // только один swap16 на вызов, а не на пиксель.
+
+    void writePixelPreclipped(int16_t x, int16_t y, uint16_t color) override {
+        Arduino_Canvas::writePixelPreclipped(x, y, swap16(color));
+    }
+
+    void writeFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color) override {
+        Arduino_Canvas::writeFastVLine(x, y, h, swap16(color));
+    }
+
+    void writeFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color) override {
+        Arduino_Canvas::writeFastHLine(x, y, w, swap16(color));
+    }
+
+    void writeFillRectPreclipped(int16_t x, int16_t y,
+                                 int16_t w, int16_t h, uint16_t color) override {
+        Arduino_Canvas::writeFillRectPreclipped(x, y, w, h, swap16(color));
     }
 };
 
@@ -159,7 +202,9 @@ void clear(uint16_t color) {
 
     // Пишем по 32 бита вместо 16: вдвое меньше обращений к PSRAM, а она здесь
     // узкое место. Fb выровнен на 16 байт, так что доступ по uint32_t корректен.
-    const uint32_t pair = (static_cast<uint32_t>(color) << 16) | color;
+    // Цвет хранится pre-swapped (big-endian) — так же, как остальные пиксели.
+    const uint16_t s = swap16(color);
+    const uint32_t pair = (static_cast<uint32_t>(s) << 16) | s;
     auto* p32 = reinterpret_cast<uint32_t*>(fb);
     const size_t n32 = (static_cast<size_t>(LCD_WIDTH) * LCD_HEIGHT) / 2;
     for (size_t i = 0; i < n32; ++i) p32[i] = pair;

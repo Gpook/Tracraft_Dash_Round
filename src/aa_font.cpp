@@ -1,4 +1,5 @@
 #include "aa_font.h"
+#include "gfx_util.h"
 
 namespace Aa {
 
@@ -120,13 +121,17 @@ void drawString(uint16_t* fb, int fbW, int fbH,
 
                     const uint32_t a = line[sx];
                     if (a == 0) continue;
-                    if (a >= 254) { row[i] = color; continue; }
+                    // Фреймбуфер хранит пиксели pre-swapped (big-endian).
+                    // При полном перекрытии просто пишем swap16(color).
+                    if (a >= 254) { row[i] = swap16(color); continue; }
 
-                    const uint16_t d = row[i];
-                    row[i] = static_cast<uint16_t>(
+                    // Разворачиваем фон обратно в native для blend, результат
+                    // снова переставляем перед записью.
+                    const uint16_t d = swap16(row[i]);
+                    row[i] = swap16(static_cast<uint16_t>(
                         (mix(sr, (d >> 11) & 0x1F, a) << 11) |
                         (mix(sg, (d >> 5)  & 0x3F, a) << 5)  |
-                         mix(sb,  d        & 0x1F, a));
+                         mix(sb,  d        & 0x1F, a)));
                 }
                 continue;
             }
@@ -153,13 +158,13 @@ void drawString(uint16_t* fb, int fbW, int fbH,
 
                 const uint32_t a = sum / static_cast<uint32_t>(bw * (sy1 - sy0));
                 if (a == 0) continue;
-                if (a >= 254) { row[i] = color; continue; }
+                if (a >= 254) { row[i] = swap16(color); continue; }
 
-                const uint16_t d = row[i];
-                row[i] = static_cast<uint16_t>(
+                const uint16_t d = swap16(row[i]);
+                row[i] = swap16(static_cast<uint16_t>(
                     (mix(sr, (d >> 11) & 0x1F, a) << 11) |
                     (mix(sg, (d >> 5)  & 0x3F, a) << 5)  |
-                     mix(sb,  d        & 0x1F, a));
+                     mix(sb,  d        & 0x1F, a)));
             }
         }
 

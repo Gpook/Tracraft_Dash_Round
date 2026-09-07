@@ -132,32 +132,19 @@ void drawCenteredText(Arduino_GFX* g, const char* s, int cx, int cy,
  */
 bool s_overlayDrawn = false;
 
-/// Полупрозрачная заливка поверх готового кадра.
-///
-/// В Arduino_GFX нет альфа-канала, поэтому смешиваем пиксели фреймбуфера
-/// напрямую. 217k пикселей — заметная цена, поэтому вызывается только когда
-/// оверлей реально виден (Warning, shift-light flash).
-void tintScreen(uint16_t color, float amount) {
-    uint16_t* fb = Display::framebuffer();
-    if (!fb) return;
-    s_overlayDrawn = true;
-    const size_t n = static_cast<size_t>(LCD_WIDTH) * LCD_HEIGHT;
-    for (size_t i = 0; i < n; ++i) fb[i] = blend565(fb[i], color, amount);
-}
-
 /// Быстрая заливка экрана готовым цветом без чтения фона.
 ///
-/// Используется вместо tintScreen когда цвет смешан заранее (blend565 один раз
-/// на кадр) — исключает 217k чтений PSRAM и вдвое снижает трафик шины.
-/// 32-битные записи дают дополнительное ускорение по сравнению с 16-битным
-/// циклом (~2 мс вместо ~12 мс у tintScreen).
+/// Цвет уже смешан заранее (blend565 один раз на кадр). Записывает pre-swapped
+/// пиксели по 32 бита — вдвое меньше обращений к PSRAM, ~2 мс на полный экран.
+/// tintScreen удалён: он читал фон из PSRAM (медленно) и не учитывал pre-swap.
 void fillScreen(uint16_t color) {
     uint16_t* fb = Display::framebuffer();
     if (!fb) return;
     s_overlayDrawn = true;
     const size_t n = static_cast<size_t>(LCD_WIDTH) * LCD_HEIGHT;
-    // Пишем по 2 пикселя (32 бит) за итерацию — вдвое меньше транзакций шины.
-    const uint32_t pair = (static_cast<uint32_t>(color) << 16) | color;
+    // color уже в native RGB565 от blend565 — swap16 перед записью.
+    const uint16_t s = swap16(color);
+    const uint32_t pair = (static_cast<uint32_t>(s) << 16) | s;
     uint32_t* fb32 = reinterpret_cast<uint32_t*>(fb);
     const size_t n32 = n / 2;
     for (size_t i = 0; i < n32; ++i) fb32[i] = pair;

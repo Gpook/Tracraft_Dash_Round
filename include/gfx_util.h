@@ -23,6 +23,14 @@ inline uint16_t rgb565FromHex(const char* hex, uint16_t fallback) {
     return static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
 }
 
+/// Перестановка байт внутри RGB565: little-endian ↔ big-endian (порядок панели).
+///
+/// Используется для хранения пикселей в фреймбуфере УЖЕ в порядке байт
+/// дисплея, чтобы DMA мог слать данные напрямую из PSRAM без CPU-конвертации.
+/// Вся отрисовка сохраняет swap16(color), чтение для смешивания делает swap16
+/// обратно, writePixels — прямой memcpy-like DMA без всяких swap.
+inline uint16_t swap16(uint16_t v) { return static_cast<uint16_t>((v >> 8) | (v << 8)); }
+
 /// Линейная интерполяция двух RGB565 — для затемнения и полупрозрачности.
 inline uint16_t blend565(uint16_t a, uint16_t b, float t) {
     if (t <= 0.0f) return a;
