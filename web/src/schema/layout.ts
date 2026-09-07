@@ -157,7 +157,6 @@ export interface GraphWidget extends WidgetBase { type: 'graph'; props: GraphPro
 export interface GForceProps {
   range?: number
   rings?: number
-  trail?: boolean
   signalX?: SignalId
   signalY?: SignalId
 }

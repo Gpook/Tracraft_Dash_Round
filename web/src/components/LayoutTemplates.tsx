@@ -1,9 +1,9 @@
-/**
- * LayoutTemplates — модальный выбор пресет-лейаута для нового экрана.
+﻿/**
+ * LayoutTemplates â€” Ð¼Ð¾Ð´Ð°Ð»ÑŒÐ½Ñ‹Ð¹ Ð²Ñ‹Ð±Ð¾Ñ€ Ð¿Ñ€ÐµÑÐµÑ‚-Ð»ÐµÐ¹Ð°ÑƒÑ‚Ð° Ð´Ð»Ñ Ð½Ð¾Ð²Ð¾Ð³Ð¾ ÑÐºÑ€Ð°Ð½Ð°.
  *
- * Каждый шаблон — набор виджетов, преднастроенных под круглый 466×466 дисплей.
- * После выбора шаблона виджеты вставляются в текущий активный экран, заменяя
- * всё содержимое (с предупреждением, если экран не пустой).
+ * ÐšÐ°Ð¶Ð´Ñ‹Ð¹ ÑˆÐ°Ð±Ð»Ð¾Ð½ â€” Ð½Ð°Ð±Ð¾Ñ€ Ð²Ð¸Ð´Ð¶ÐµÑ‚Ð¾Ð², Ð¿Ñ€ÐµÐ´Ð½Ð°ÑÑ‚Ñ€Ð¾ÐµÐ½Ð½Ñ‹Ñ… Ð¿Ð¾Ð´ ÐºÑ€ÑƒÐ³Ð»Ñ‹Ð¹ 466Ã—466 Ð´Ð¸ÑÐ¿Ð»ÐµÐ¹.
+ * ÐŸÐ¾ÑÐ»Ðµ Ð²Ñ‹Ð±Ð¾Ñ€Ð° ÑˆÐ°Ð±Ð»Ð¾Ð½Ð° Ð²Ð¸Ð´Ð¶ÐµÑ‚Ñ‹ Ð²ÑÑ‚Ð°Ð²Ð»ÑÑŽÑ‚ÑÑ Ð² Ñ‚ÐµÐºÑƒÑ‰Ð¸Ð¹ Ð°ÐºÑ‚Ð¸Ð²Ð½Ñ‹Ð¹ ÑÐºÑ€Ð°Ð½, Ð·Ð°Ð¼ÐµÐ½ÑÑ
+ * Ð²ÑÑ‘ ÑÐ¾Ð´ÐµÑ€Ð¶Ð¸Ð¼Ð¾Ðµ (Ñ Ð¿Ñ€ÐµÐ´ÑƒÐ¿Ñ€ÐµÐ¶Ð´ÐµÐ½Ð¸ÐµÐ¼, ÐµÑÐ»Ð¸ ÑÐºÑ€Ð°Ð½ Ð½Ðµ Ð¿ÑƒÑÑ‚Ð¾Ð¹).
  */
 
 import { useEditorStore } from '@/store'
@@ -18,22 +18,22 @@ interface Template {
   widgets: () => Omit<Widget, 'id'>[]
 }
 
-// ─── Шаблоны ──────────────────────────────────────────────────────────────────
-// Все координаты рассчитаны для 466×466.
+// â”€â”€â”€ Ð¨Ð°Ð±Ð»Ð¾Ð½Ñ‹ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ð’ÑÐµ ÐºÐ¾Ð¾Ñ€Ð´Ð¸Ð½Ð°Ñ‚Ñ‹ Ñ€Ð°ÑÑÑ‡Ð¸Ñ‚Ð°Ð½Ñ‹ Ð´Ð»Ñ 466Ã—466.
 
 const TEMPLATES: Template[] = [
   {
     id: 'blank',
     name: 'Blank',
-    description: 'Empty screen — total freedom',
-    icon: '⬜',
+    description: 'Empty screen â€” total freedom',
+    icon: 'â¬œ',
     widgets: () => [],
   },
   {
     id: 'speed-focus',
     name: 'Speed Focus',
     description: 'Shift lights + centered speed',
-    icon: '◉',
+    icon: 'â—‰',
     widgets: () => [
         { type: 'numeric', rect: { x: 133, y: 86, w: 200, h: 60 }, z: 1, signal: 'engine.rpm',
           unit: 'rpm', props: { decimals: 0, align: 'center', showUnit: true, colorFromZones: true,
@@ -51,7 +51,7 @@ const TEMPLATES: Template[] = [
         props: { text: 'km/h', align: 'center', color: '#6E6E73' },
       } satisfies Omit<LabelWidget, 'id'>,
       { type: 'numeric', rect: { x: 55, y: 292, w: 130, h: 70 }, z: 1, signal: 'engine.coolant_t',
-        unit: '°C', props: { decimals: 0, align: 'center', caption: 'COOLANT',
+        unit: 'Â°C', props: { decimals: 0, align: 'center', caption: 'COOLANT',
           colorFromZones: true, zones: [{ from: -40, to: 60, color: '#0A84FF' }, { from: 60, to: 105, color: '#FFF' }, { from: 105, to: 150, color: '#FF3B30' }] },
       } satisfies Omit<NumericWidget, 'id'>,
       { type: 'numeric', rect: { x: 281, y: 292, w: 130, h: 70 }, z: 1, signal: 'sensor.oil_p',
@@ -64,11 +64,11 @@ const TEMPLATES: Template[] = [
     id: 'quad',
     name: '4 Metrics',
     description: '4 large numeric fields in quadrants',
-    icon: '⊞',
+    icon: 'âŠž',
     widgets: () => {
-      // Квадранты в круге 466: центр 233,233. Рабочая область ~±160px от центра
+      // ÐšÐ²Ð°Ð´Ñ€Ð°Ð½Ñ‚Ñ‹ Ð² ÐºÑ€ÑƒÐ³Ðµ 466: Ñ†ÐµÐ½Ñ‚Ñ€ 233,233. Ð Ð°Ð±Ð¾Ñ‡Ð°Ñ Ð¾Ð±Ð»Ð°ÑÑ‚ÑŒ ~Â±160px Ð¾Ñ‚ Ñ†ÐµÐ½Ñ‚Ñ€Ð°
       const fields: [string, string, string][] = [
-        ['engine.coolant_t', '°C', 'COOLANT'],
+        ['engine.coolant_t', 'Â°C', 'COOLANT'],
         ['sensor.oil_p',     'bar', 'OIL P'],
         ['engine.rpm',       'rpm', 'RPM'],
         ['veh.speed',        'km/h', 'SPEED'],
@@ -91,7 +91,7 @@ const TEMPLATES: Template[] = [
     id: 'track',
     name: 'Track',
     description: 'RPM arc + shift + 3 data fields',
-    icon: '🏎',
+    icon: 'ðŸŽ',
     widgets: () => [
         { type: 'numeric', rect: { x: 133, y: 86, w: 200, h: 60 }, z: 1, signal: 'engine.rpm',
           unit: 'rpm', props: { decimals: 0, align: 'center', showUnit: true, colorFromZones: true,
@@ -107,10 +107,10 @@ const TEMPLATES: Template[] = [
         unit: 'km/h', props: { decimals: 0, align: 'center', showUnit: false },
       } satisfies Omit<NumericWidget, 'id'>,
       { type: 'numeric', rect: { x: 64, y: 300, w: 110, h: 64 }, z: 1, signal: 'engine.coolant_t',
-        unit: '°C', props: { decimals: 0, align: 'center', caption: 'COOLANT' },
+        unit: 'Â°C', props: { decimals: 0, align: 'center', caption: 'COOLANT' },
       } satisfies Omit<NumericWidget, 'id'>,
       { type: 'numeric', rect: { x: 178, y: 352, w: 110, h: 64 }, z: 1, signal: 'sensor.egt',
-        unit: '°C', props: { decimals: 0, align: 'center', caption: 'EGT' },
+        unit: 'Â°C', props: { decimals: 0, align: 'center', caption: 'EGT' },
       } satisfies Omit<NumericWidget, 'id'>,
       { type: 'numeric', rect: { x: 292, y: 300, w: 110, h: 64 }, z: 1, signal: 'sensor.oil_p',
         unit: 'bar', props: { decimals: 1, align: 'center', caption: 'OIL P' },
@@ -127,18 +127,18 @@ const TEMPLATES: Template[] = [
     id: 'temps',
     name: 'Temps & Graph',
     description: 'Scrolling temperature graph + 2 fields',
-    icon: '📈',
+    icon: 'ðŸ“ˆ',
     widgets: () => [
       { type: 'graph', rect: { x: 56, y: 80, w: 354, h: 200 }, z: 0,
         props: { min: 0, max: 140, windowSec: 60, lineWidth: 2,
           signals: [{ signal: 'engine.coolant_t', color: '#0A84FF' }, { signal: 'sensor.oil_t', color: '#FFCC00' }] },
       } satisfies Omit<GraphWidget, 'id'>,
       { type: 'numeric', rect: { x: 64, y: 310, w: 150, h: 80 }, z: 1, signal: 'engine.coolant_t',
-        unit: '°C', props: { decimals: 0, align: 'center', caption: 'COOLANT',
+        unit: 'Â°C', props: { decimals: 0, align: 'center', caption: 'COOLANT',
           colorFromZones: true, zones: [{ from: -40, to: 60, color: '#0A84FF' }, { from: 60, to: 105, color: '#FFF' }, { from: 105, to: 150, color: '#FF3B30' }] },
       } satisfies Omit<NumericWidget, 'id'>,
       { type: 'numeric', rect: { x: 252, y: 310, w: 150, h: 80 }, z: 1, signal: 'sensor.oil_t',
-        unit: '°C', props: { decimals: 0, align: 'center', caption: 'OIL TEMP' },
+        unit: 'Â°C', props: { decimals: 0, align: 'center', caption: 'OIL TEMP' },
       } satisfies Omit<NumericWidget, 'id'>,
     ],
   },
@@ -146,16 +146,16 @@ const TEMPLATES: Template[] = [
     id: 'gforce',
     name: 'G-Force',
     description: 'G-ball + speed + 2 temperatures',
-    icon: '⊕',
+    icon: 'âŠ•',
     widgets: () => [
       { type: 'gforce', rect: { x: 133, y: 80, w: 200, h: 200 }, z: 0,
-        props: { range: 1.5, rings: 3, trail: true, signalX: 'imu.ax', signalY: 'imu.ay' },
+        props: { range: 1.5, rings: 3, signalX: 'imu.ax', signalY: 'imu.ay' },
       } satisfies Omit<GForceWidget, 'id'>,
       { type: 'numeric', rect: { x: 148, y: 296, w: 170, h: 72 }, z: 1, signal: 'veh.speed',
         unit: 'km/h', props: { decimals: 0, align: 'center', showUnit: false },
       } satisfies Omit<NumericWidget, 'id'>,
       { type: 'numeric', rect: { x: 64, y: 360, w: 140, h: 64 }, z: 1, signal: 'engine.coolant_t',
-        unit: '°C', props: { decimals: 0, align: 'center', caption: 'COOLANT' },
+        unit: 'Â°C', props: { decimals: 0, align: 'center', caption: 'COOLANT' },
       } satisfies Omit<NumericWidget, 'id'>,
       { type: 'numeric', rect: { x: 262, y: 360, w: 140, h: 64 }, z: 1, signal: 'sys.battery',
         unit: 'V', props: { decimals: 1, align: 'center', caption: 'BATT' },
@@ -164,7 +164,7 @@ const TEMPLATES: Template[] = [
   },
 ]
 
-// ─── Компонент ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ ÐšÐ¾Ð¼Ð¿Ð¾Ð½ÐµÐ½Ñ‚ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface Props { onClose: () => void }
 
@@ -179,7 +179,7 @@ export function LayoutTemplates({ onClose }: Props) {
       if (!ok) return
     }
 
-    // Создаём копию экрана с новыми виджетами
+    // Ð¡Ð¾Ð·Ð´Ð°Ñ‘Ð¼ ÐºÐ¾Ð¿Ð¸ÑŽ ÑÐºÑ€Ð°Ð½Ð° Ñ Ð½Ð¾Ð²Ñ‹Ð¼Ð¸ Ð²Ð¸Ð´Ð¶ÐµÑ‚Ð°Ð¼Ð¸
     const widgets: Widget[] = tpl.widgets().map(w => ({ ...w, id: newId(w.type) } as Widget))
     const screen = { ...layout.screens[activeScreenIdx], widgets }
     const newScreens = [...layout.screens]
@@ -193,7 +193,7 @@ export function LayoutTemplates({ onClose }: Props) {
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h2>Layout Templates</h2>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          <button className="modal-close" onClick={onClose}>âœ•</button>
         </div>
         <div className="templates-grid">
           {TEMPLATES.map(tpl => (

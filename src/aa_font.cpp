@@ -51,6 +51,11 @@ void drawString(uint16_t* fb, int fbW, int fbH,
     const int32_t inv = static_cast<int32_t>(
         (static_cast<int64_t>(kOne) << 16) / scale);
 
+    // При увеличении и масштабе около единицы усреднять нечего: на выходной
+    // пиксель приходится не больше одного исходного. Это основной случай для
+    // крупных цифр, и для него есть отдельный цикл без деления.
+    const bool upscale = inv <= static_cast<int32_t>(kOne);
+
     const uint32_t sr = (color >> 11) & 0x1F;
     const uint32_t sg = (color >> 5) & 0x3F;
     const uint32_t sb = color & 0x1F;
@@ -79,54 +84,82 @@ void drawString(uint16_t* fb, int fbW, int fbH,
 
         const uint8_t* src = f.alpha + g->off;
 
-        for (int j = 0; j < dh; ++j) {
-            const int y = gy + j;
-            if (y < 0 || y >= fbH) continue;
+        // Отсечение по кадру считается один раз на глиф.
+        //
+        // Раньше границы проверялись на каждом пикселе, а позиция в исходнике
+        // считалась как (i * inv) >> 16 в 64 битах — тоже на каждом пикселе.
+        // На Xtensa 64-битное умножение это несколько инструкций, и на крупных
+        // цифрах набегали миллисекунды. Здесь вместо умножения аккумулятор.
+        int i0 = gx < 0 ? -gx : 0;
+        int i1 = (gx + dw > fbW) ? (fbW - gx) : dw;
+        int j0 = gy < 0 ? -gy : 0;
+        int j1 = (gy + dh > fbH) ? (fbH - gy) : dh;
+        if (i1 <= i0 || j1 <= j0) { pen += adv; continue; }
 
-            // Выходной пиксель усредняется по прямоугольнику исходных. При
-            // уменьшении это подавляет ступеньки, при масштабе около единицы
-            // прямоугольник схлопывается в один пиксель — и это нормально:
-            // исходник уже сглажен, полутона никуда не деваются.
-            int sy0 = static_cast<int>((static_cast<int64_t>(j) * inv) >> 16);
-            int sy1 = static_cast<int>((static_cast<int64_t>(j + 1) * inv) >> 16);
+        // Позиция в исходнике, 16.16. Оценка сверху: dh и dw не больше высоты
+        // панели, inv при разумных масштабах в пределах десятков тысяч, так
+        // что произведение укладывается в 32 бита с большим запасом.
+        uint32_t yAcc = static_cast<uint32_t>(j0) * static_cast<uint32_t>(inv);
+
+        for (int j = j0; j < j1; ++j, yAcc += static_cast<uint32_t>(inv)) {
+            int sy0 = static_cast<int>(yAcc >> 16);
+            if (sy0 >= g->h) break;
+
+            uint16_t* row = fb + static_cast<size_t>(gy + j) * fbW + gx;
+            uint32_t xAcc = static_cast<uint32_t>(i0) * static_cast<uint32_t>(inv);
+
+            if (upscale) {
+                // Выборка один-в-один: прямоугольник усреднения схлопнут в
+                // один пиксель, поэтому ни суммы, ни деления не нужно.
+                // Исходник уже сглажен, полутона никуда не деваются.
+                const uint8_t* line = src + static_cast<size_t>(sy0) * g->w;
+
+                for (int i = i0; i < i1; ++i, xAcc += static_cast<uint32_t>(inv)) {
+                    const int sx = static_cast<int>(xAcc >> 16);
+                    if (sx >= g->w) break;
+
+                    const uint32_t a = line[sx];
+                    if (a == 0) continue;
+                    if (a >= 254) { row[i] = color; continue; }
+
+                    const uint16_t d = row[i];
+                    row[i] = static_cast<uint16_t>(
+                        (mix(sr, (d >> 11) & 0x1F, a) << 11) |
+                        (mix(sg, (d >> 5)  & 0x3F, a) << 5)  |
+                         mix(sb,  d        & 0x1F, a));
+                }
+                continue;
+            }
+
+            // Уменьшение: выходной пиксель усредняется по прямоугольнику
+            // исходных, иначе на мелком кегле лезут ступеньки.
+            int sy1 = static_cast<int>((yAcc + inv) >> 16);
             if (sy1 <= sy0) sy1 = sy0 + 1;
             if (sy1 > g->h) sy1 = g->h;
-            if (sy0 >= g->h) continue;
 
-            uint16_t* row = fb + static_cast<size_t>(y) * fbW;
-
-            for (int i = 0; i < dw; ++i) {
-                const int x = gx + i;
-                if (x < 0 || x >= fbW) continue;
-
-                int sx0 = static_cast<int>((static_cast<int64_t>(i) * inv) >> 16);
-                int sx1 = static_cast<int>((static_cast<int64_t>(i + 1) * inv) >> 16);
+            for (int i = i0; i < i1; ++i, xAcc += static_cast<uint32_t>(inv)) {
+                int sx0 = static_cast<int>(xAcc >> 16);
+                if (sx0 >= g->w) break;
+                int sx1 = static_cast<int>((xAcc + inv) >> 16);
                 if (sx1 <= sx0) sx1 = sx0 + 1;
                 if (sx1 > g->w) sx1 = g->w;
-                if (sx0 >= g->w) continue;
 
+                const int bw = sx1 - sx0;
                 uint32_t sum = 0;
-                uint32_t cnt = 0;
                 for (int sy = sy0; sy < sy1; ++sy) {
                     const uint8_t* line = src + static_cast<size_t>(sy) * g->w;
                     for (int sx = sx0; sx < sx1; ++sx) sum += line[sx];
-                    cnt += static_cast<uint32_t>(sx1 - sx0);
                 }
-                if (cnt == 0) continue;
 
-                const uint32_t a = sum / cnt;
+                const uint32_t a = sum / static_cast<uint32_t>(bw * (sy1 - sy0));
                 if (a == 0) continue;
+                if (a >= 254) { row[i] = color; continue; }
 
-                if (a >= 254) {
-                    row[x] = color;
-                    continue;
-                }
-
-                const uint16_t d = row[x];
-                const uint32_t r = mix(sr, (d >> 11) & 0x1F, a);
-                const uint32_t gg = mix(sg, (d >> 5) & 0x3F, a);
-                const uint32_t b = mix(sb, d & 0x1F, a);
-                row[x] = static_cast<uint16_t>((r << 11) | (gg << 5) | b);
+                const uint16_t d = row[i];
+                row[i] = static_cast<uint16_t>(
+                    (mix(sr, (d >> 11) & 0x1F, a) << 11) |
+                    (mix(sg, (d >> 5)  & 0x3F, a) << 5)  |
+                     mix(sb,  d        & 0x1F, a));
             }
         }
 

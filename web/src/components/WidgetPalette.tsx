@@ -1,6 +1,6 @@
-/**
- * WidgetPalette — левая панель с типами виджетов.
- * Клик — добавляет виджет в центр активного экрана.
+﻿/**
+ * WidgetPalette â€” Ð»ÐµÐ²Ð°Ñ Ð¿Ð°Ð½ÐµÐ»ÑŒ Ñ Ñ‚Ð¸Ð¿Ð°Ð¼Ð¸ Ð²Ð¸Ð´Ð¶ÐµÑ‚Ð¾Ð².
+ * ÐšÐ»Ð¸Ðº â€” Ð´Ð¾Ð±Ð°Ð²Ð»ÑÐµÑ‚ Ð²Ð¸Ð´Ð¶ÐµÑ‚ Ð² Ñ†ÐµÐ½Ñ‚Ñ€ Ð°ÐºÑ‚Ð¸Ð²Ð½Ð¾Ð³Ð¾ ÑÐºÑ€Ð°Ð½Ð°.
  */
 
 import { useEditorStore } from '@/store'
@@ -16,7 +16,7 @@ interface PaletteItem {
 
 const PALETTE: PaletteItem[] = [
   {
-    type: 'numeric', label: 'Numeric', icon: '🔢',
+    type: 'numeric', label: 'Numeric', icon: 'ðŸ”¢',
     defaultWidget: () => ({
       type: 'numeric',
       rect: { x: 158, y: 180, w: 150, h: 80 },
@@ -36,7 +36,7 @@ const PALETTE: PaletteItem[] = [
     }),
   },
   {
-    type: 'bar', label: 'Bar', icon: '▬',
+    type: 'bar', label: 'Bar', icon: 'â–¬',
     defaultWidget: () => ({
       type: 'bar',
       rect: { x: 80, y: 420, w: 140, h: 10 },
@@ -46,7 +46,7 @@ const PALETTE: PaletteItem[] = [
     }),
   },
   {
-    type: 'shift_light', label: 'Shift Segments', icon: '●●●',
+    type: 'shift_light', label: 'Shift Segments', icon: 'â—â—â—',
     defaultWidget: () => ({
       type: 'shift_light',
       rect: { x: 133, y: 40, w: 200, h: 14 },
@@ -63,7 +63,7 @@ const PALETTE: PaletteItem[] = [
     }),
   },
   {
-    type: 'shift_light', label: 'Shift Arc', icon: '◜●◝',
+    type: 'shift_light', label: 'Shift Arc', icon: 'â—œâ—â—',
     defaultWidget: () => ({
       type: 'shift_light',
       rect: { x: 83, y: 26, w: 300, h: 60 },
@@ -83,7 +83,7 @@ const PALETTE: PaletteItem[] = [
     }),
   },
   {
-    type: 'shift_light', label: 'Shift Flash', icon: '⚡',
+    type: 'shift_light', label: 'Shift Flash', icon: 'âš¡',
     defaultWidget: () => ({
       type: 'shift_light',
       rect: { x: 0, y: 0, w: 466, h: 466 },
@@ -99,7 +99,7 @@ const PALETTE: PaletteItem[] = [
     }),
   },
   {
-    type: 'warning', label: 'Warning', icon: '⚠',
+    type: 'warning', label: 'Warning', icon: 'âš ',
     defaultWidget: () => ({
       type: 'warning',
       rect: { x: 0, y: 0, w: 466, h: 466 },
@@ -115,7 +115,7 @@ const PALETTE: PaletteItem[] = [
     }),
   },
   {
-    type: 'graph', label: 'Graph', icon: '📈',
+    type: 'graph', label: 'Graph', icon: 'ðŸ“ˆ',
     defaultWidget: () => ({
       type: 'graph',
       rect: { x: 60, y: 100, w: 346, h: 180 },
@@ -124,16 +124,16 @@ const PALETTE: PaletteItem[] = [
     }),
   },
   {
-    type: 'gforce', label: 'G-Force', icon: '⊕',
+    type: 'gforce', label: 'G-Force', icon: 'âŠ•',
     defaultWidget: () => ({
       type: 'gforce',
       rect: { x: 173, y: 280, w: 120, h: 120 },
       z: 0,
-      props: { range: 1.5, rings: 3, trail: true, signalX: 'imu.ax', signalY: 'imu.ay' },
+      props: { range: 1.5, rings: 3, signalX: 'imu.ax', signalY: 'imu.ay' },
     }),
   },
   {
-    type: 'steering', label: 'Steering', icon: '⇄',
+    type: 'steering', label: 'Steering', icon: 'â‡„',
     defaultWidget: () => ({
       type: 'steering',
       rect: { x: 133, y: 420, w: 200, h: 14 },
@@ -151,7 +151,7 @@ const PALETTE: PaletteItem[] = [
     }),
   },
   {
-    type: 'clock', label: 'Clock', icon: '🕐',
+    type: 'clock', label: 'Clock', icon: 'ðŸ•',
     defaultWidget: () => ({
       type: 'clock',
       rect: { x: 163, y: 196, w: 140, h: 50 },
@@ -160,7 +160,7 @@ const PALETTE: PaletteItem[] = [
     }),
   },
   {
-    type: 'lap_timer', label: 'Lap Timer', icon: '⏱',
+    type: 'lap_timer', label: 'Lap Timer', icon: 'â±',
     defaultWidget: () => ({
       type: 'lap_timer',
       rect: { x: 138, y: 190, w: 190, h: 60 },

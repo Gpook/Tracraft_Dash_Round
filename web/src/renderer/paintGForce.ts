@@ -18,10 +18,6 @@
 import { GForceWidget } from '@/schema/layout'
 import type { SignalMap } from './paintWidget'
 
-// Трейл — последние N позиций шарика
-const TRAIL_LEN = 30
-const trailMap = new Map<string, Array<[number, number]>>()
-
 export function paintGForce(
   ctx: CanvasRenderingContext2D,
   widget: GForceWidget,
@@ -29,10 +25,9 @@ export function paintGForce(
   theme: { fg: string; muted: string },
   _time: number,
 ) {
-  const { rect, props, id } = widget
+  const { rect, props } = widget
   const range = props.range ?? 2.0
   const rings = props.rings ?? 2
-  const showTrail = props.trail ?? true
 
   const signalX = props.signalX ?? 'imu.ax'
   const signalY = props.signalY ?? 'imu.ay'
@@ -101,26 +96,6 @@ export function paintGForce(
   //   поворот вправо (ax > 0) → вес влево → шарик влево
   const ballX = radarX - (ax / range) * R
   const ballY = radarY + (ay / range) * R
-
-  // ── Трейл ─────────────────────────────────────────────────────────────────
-  if (showTrail) {
-    let trail = trailMap.get(id)
-    if (!trail) { trail = []; trailMap.set(id, trail) }
-
-    trail.push([ballX, ballY])
-    if (trail.length > TRAIL_LEN) trail.shift()
-
-    for (let i = 0; i < trail.length; i++) {
-      const alpha = (i / trail.length) * 0.5
-      const tr = Math.max(2, 4 * (i / trail.length))
-      ctx.globalAlpha = alpha
-      ctx.fillStyle = '#0A84FF'
-      ctx.beginPath()
-      ctx.arc(trail[i][0], trail[i][1], tr, 0, Math.PI * 2)
-      ctx.fill()
-    }
-    ctx.globalAlpha = 1
-  }
 
   // ── Шарик ─────────────────────────────────────────────────────────────────
   const ballR = Math.max(5, R * 0.10)

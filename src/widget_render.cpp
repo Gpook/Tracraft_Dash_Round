@@ -145,50 +145,7 @@ void tintScreen(uint16_t color, float amount) {
     for (size_t i = 0; i < n; ++i) fb[i] = blend565(fb[i], color, amount);
 }
 
-/// Затемнение кадра на целочисленной арифметике.
-///
-/// keep256 — сколько яркости оставить, в 1/256 долях: 179 это примерно 70%,
-/// то есть затемнение на 30% как в редакторе. Плавающей точки нет специально:
-/// проход идёт по 217k пикселей каждый кадр, пока оверлей виден.
-void dimScreen(uint16_t keep256) {
-    uint16_t* fb = Display::framebuffer();
-    if (!fb) return;
-    s_overlayDrawn = true;
-    const size_t n = static_cast<size_t>(LCD_WIDTH) * LCD_HEIGHT;
-    for (size_t i = 0; i < n; ++i) {
-        const uint16_t c = fb[i];
-        const uint16_t r = static_cast<uint16_t>((((c >> 11) & 0x1F) * keep256) >> 8);
-        const uint16_t g = static_cast<uint16_t>((((c >> 5) & 0x3F) * keep256) >> 8);
-        const uint16_t b = static_cast<uint16_t>(((c & 0x1F) * keep256) >> 8);
-        fb[i] = static_cast<uint16_t>((r << 11) | (g << 5) | b);
-    }
-}
 
-/// Знак аварии: треугольник с восклицательным знаком, нарисованный вектором.
-///
-/// В редакторе на этом месте стоял emoji, но во встроенных шрифтах его нет и
-/// быть не может. Поэтому иконка рисуется примитивами — и редактор переведён
-/// на такую же отрисовку, чтобы вид совпадал.
-void drawWarnTriangle(Arduino_GFX* g, int cx, int cy, int size, uint16_t fg, uint16_t bg) {
-    const int h  = size;
-    const int w  = static_cast<int>(size * 1.15f);
-    const int ax = cx,          ay = cy - h / 2;
-    const int lx = cx - w / 2,  ly = cy + h / 2;
-    const int rx = cx + w / 2,  ry = ly;
-
-    g->fillTriangle(ax, ay, lx, ly, rx, ry, fg);
-
-    // Внутренний треугольник цветом фона превращает фигуру в контур
-    const int inset = size / 7 > 2 ? size / 7 : 2;
-    g->fillTriangle(ax, ay + inset * 2, lx + inset * 2, ly - inset,
-                    rx - inset * 2, ry - inset, bg);
-
-    // Восклицательный знак
-    const int barW = size / 9 > 2 ? size / 9 : 2;
-    const int barH = size / 3;
-    g->fillRect(cx - barW / 2, cy - barH / 3, barW, barH, fg);
-    g->fillRect(cx - barW / 2, cy + barH * 2 / 3 + 2, barW, barW, fg);
-}
 
 // ─── Состояние виджетов между кадрами ────────────────────────────────────────
 
@@ -197,8 +154,7 @@ constexpr uint8_t  kGraphPool    = 3;
 constexpr uint8_t  kGraphSignals = 4;
 constexpr uint16_t kGraphPoints  = 120;
 constexpr uint8_t  kIdLen        = 24;
-constexpr uint8_t  kTrailPool    = 2;
-constexpr uint8_t  kTrailLen     = 30;
+constexpr uint8_t  kBallPool     = 2;
 
 struct WarnState {
     char     id[kIdLen];
@@ -232,33 +188,36 @@ WarnState* warnState(const char* id) {
 }
 
 /// След шарика G-force: кольцевой буфер последних позиций.
-struct TrailState {
+/// Положение шарика G-force между кадрами.
+///
+/// Хранится ровно одна точка. Раньше здесь был кольцевой буфер на 30 позиций
+/// под след, и по нему же считалась живая область виджета — из-за чего она
+/// разрасталась почти на весь радар: за 30 кадров при 11 FPS шарик успевает
+/// обойти его целиком. Со снятым следом область сжимается до самого шарика.
+struct BallState {
     char    id[kIdLen];
     bool    used;
-    uint8_t head;
-    uint8_t filled;
-    int16_t x[kTrailLen];
-    int16_t y[kTrailLen];
-    /// Область, занятая шариком, следом и цифрами на предыдущем кадре.
+    bool    seen;   ///< позиция уже записана хотя бы раз
+    int16_t x, y;
+    /// Область, занятая шариком и цифрами на предыдущем кадре.
     ///
     /// Нужна, чтобы восстанавливать и отправлять только её вместо всей рамки
     /// радара. Прошлый кадр надо затереть, текущий — отправить, поэтому
     /// liveRect() возвращает объединение прошлой области с текущей.
-    R       live = {0, 0, 0, 0};
+    R       live;
 };
-TrailState s_trail[kTrailPool] = {};
+BallState s_ball[kBallPool] = {};
 
-TrailState* trailState(const char* id) {
-    for (auto& t : s_trail) if (t.used && strncmp(t.id, id, kIdLen) == 0) return &t;
-    for (auto& t : s_trail) {
-        if (!t.used) {
-            t.used = true;
-            strncpy(t.id, id, kIdLen - 1);
-            t.id[kIdLen - 1] = '\0';
-            t.head = 0;
-            t.filled = 0;
-            t.live = R{0, 0, 0, 0};
-            return &t;
+BallState* ballState(const char* id) {
+    for (auto& b : s_ball) if (b.used && strncmp(b.id, id, kIdLen) == 0) return &b;
+    for (auto& b : s_ball) {
+        if (!b.used) {
+            b.used = true;
+            strncpy(b.id, id, kIdLen - 1);
+            b.id[kIdLen - 1] = '\0';
+            b.seen = false;
+            b.live = R{0, 0, 0, 0};
+            return &b;
         }
     }
     return nullptr;
@@ -582,42 +541,41 @@ void paintWarning(const Frame& f, JsonObjectConst w, const R& /*r*/) {
     // rect умышленно игнорируется: предупреждение о падении давления масла
     // должно читаться мгновенно и не может зависеть от того, в какой угол его
     // положили в редакторе. Редактор рисует его так же.
+    //
+    // Плоская заливка одним проходом. Было три: затемнение всего кадра,
+    // радиальный градиент из 130 концентрических окружностей и векторный
+    // треугольник. На кадрах со сработавшей аварией это давало провал до
+    // 8 FPS при 90-110 мс рендера — два полноэкранных проходa по PSRAM вместо
+    // одного.
     const uint16_t col = pC(p, "color", Layout::themeCrit());
-    dimScreen(179);   // оставить 70% яркости = затемнение на 30%
+    tintScreen(col, 0.70f);
 
     const int cx = LCD_WIDTH / 2;
     const int cy = LCD_HEIGHT / 2;
-    const int rr = static_cast<int>((LCD_WIDTH < LCD_HEIGHT ? LCD_WIDTH : LCD_HEIGHT) * 0.28f);
-
-    // Радиальный градиент: от насыщенного центра к почти прозрачному краю.
-    // Один проход концентрическими окружностями повторяет createRadialGradient
-    // редактора и стоит дешевле смешивания каждого пикселя.
-    const uint16_t bg = f.bg;
-    for (int rad = rr; rad >= 0; --rad) {
-        const float k = static_cast<float>(rad) / rr;   // 0 в центре, 1 на краю
-        g->drawCircle(cx, cy, rad, blend565(bg, col, 0.85f - 0.65f * k));
-    }
 
     const char* label    = pS(p, "label", "WARNING");
     const bool  hasLabel = label && *label;
-
-    drawWarnTriangle(g, cx, cy - static_cast<int>(rr * (hasLabel ? 0.22f : 0.05f)),
-                     static_cast<int>(rr * 0.62f), 0xFFFF, blend565(bg, col, 0.80f));
-
-    if (hasLabel) {
-        drawBoxText(g, label, cx - rr, cy + static_cast<int>(rr * 0.20f),
-                    rr * 2, static_cast<int>(rr * 0.30f), "center", VA::Top,
-                    static_cast<int>(rr * 0.28f), 0xFFFF);
-    }
 
     const char* unit = w["unit"] | "";
     char buf[24];
     snprintf(buf, sizeof buf, "%.*f%s%s",
              strcmp(unit, "bar") == 0 ? 2 : (shown > 100.0f ? 0 : 1),
              static_cast<double>(shown), *unit ? " " : "", unit);
-    drawBoxText(g, buf, cx - rr, cy + static_cast<int>(rr * (hasLabel ? 0.50f : 0.32f)),
-                rr * 2, static_cast<int>(rr * 0.26f), "center", VA::Top,
-                static_cast<int>(rr * 0.22f), 0xFFFF, false);
+
+    // Подпись и значение по центру экрана. Кегли — доли ширины панели, чтобы
+    // текст читался с водительского места без настройки.
+    const int labelPx = LCD_WIDTH * 13 / 100;
+    const int valuePx = LCD_WIDTH * 10 / 100;
+
+    if (hasLabel) {
+        drawBoxText(g, label, 0, cy - labelPx, LCD_WIDTH, labelPx,
+                    "center", VA::Top, labelPx, 0xFFFF);
+        drawBoxText(g, buf, 0, cy + labelPx / 5, LCD_WIDTH, valuePx,
+                    "center", VA::Top, valuePx, 0xFFFF, false);
+    } else {
+        drawBoxText(g, buf, 0, cy - valuePx / 2, LCD_WIDTH, valuePx,
+                    "center", VA::Top, valuePx, 0xFFFF, false);
+    }
 }
 
 // ─── gforce ──────────────────────────────────────────────────────────────────
@@ -722,25 +680,11 @@ void paintGForce(const Frame& f, JsonObjectConst w, const R& r, Part part) {
     const int bx = cx - static_cast<int>(clampf(ax / range, -1.0f, 1.0f) * R0);
     const int by = cy + static_cast<int>(clampf(ay / range, -1.0f, 1.0f) * R0);
 
-    // Позиция пишется в кольцевой буфер всегда, даже когда след выключен: по
-    // нему считается живая область виджета, и без записи она была бы пустой.
-    TrailState* ts = trailState(w["id"] | "gforce");
-    if (ts) {
-        ts->x[ts->head] = static_cast<int16_t>(bx);
-        ts->y[ts->head] = static_cast<int16_t>(by);
-        ts->head = (ts->head + 1) % kTrailLen;
-        if (ts->filled < kTrailLen) ++ts->filled;
-    }
-
-    // След: чем свежее точка, тем крупнее и ярче
-    if (ts && pB(p, "trail", true)) {
-        for (uint8_t i = 0; i < ts->filled; ++i) {
-            const uint8_t idx = (ts->head + kTrailLen - ts->filled + i) % kTrailLen;
-            const float   age = static_cast<float>(i) / ts->filled;   // 0 старый … 1 свежий
-            const int     tr  = static_cast<int>(4.0f * age) < 2 ? 2 : static_cast<int>(4.0f * age);
-            g->fillCircle(ts->x[idx], ts->y[idx], tr,
-                          blend565(bg, 0x055F, age * 0.5f));
-        }
+    // Позиция запоминается для расчёта живой области виджета
+    if (BallState* bs = ballState(w["id"] | "gforce")) {
+        bs->x = static_cast<int16_t>(bx);
+        bs->y = static_cast<int16_t>(by);
+        bs->seen = true;
     }
 
     // Шарик: вместо градиента и свечения — тёмная кайма и светлый блик,
@@ -928,6 +872,39 @@ bool isHybrid(const char* type) {
 }
 
 /**
+ * Затирает ли виджет своё прошлое состояние сам.
+ *
+ * Такому виджету не нужно восстанавливать фон из статического слоя: он и так
+ * закрашивает весь свой прямоугольник каждый кадр. Для шифт-дуги это половина
+ * экрана (рамка 440x248) при том, что реально меняется цвет двух десятков
+ * точек на неизменных позициях — восстановление там было чистой потерей
+ * порядка 11 мс на кадр.
+ *
+ * Отправлять эти строки на панель по-прежнему нужно: пиксели меняются.
+ *
+ * Требование к виджету: за кадр он закрашивает каждый пиксель, который мог
+ * закрасить в прошлом кадре. Полоса и руль сначала заливают дорожку во всю
+ * рамку, шифт-лайт красит все ступени и все точки дуги, включая погасшие.
+ * Незакрашенными остаются только зазоры и срезанные углы, а там лежит фон,
+ * который не менялся.
+ */
+bool isSelfErasing(JsonObjectConst w, const char* type) {
+    if (strcmp(type, "bar") == 0) return true;
+
+    if (strcmp(type, "shift_light") == 0) {
+        // flash — полноэкранный оверлей, у него своя ветка
+        return strcmp(w["props"]["mode"] | "segments", "flash") != 0;
+    }
+
+    // У руля под полосой может стоять подпись с углом, а её область дорожкой
+    // не закрывается — тогда без восстановления цифры наложились бы друг на
+    // друга.
+    if (strcmp(type, "steering") == 0) return !(w["props"]["showValue"] | false);
+
+    return false;
+}
+
+/**
  * Область виджета, меняющаяся от кадра к кадру.
  *
  * Возвращает false, если виджет меняется целиком и надо брать всю рамку.
@@ -948,22 +925,21 @@ bool liveRect(const Frame& f, JsonObjectConst w, const char* type, R& out) {
     const GForceGeom gm = gforceGeom(r);
     if (!gm.ok) return false;
 
-    TrailState* ts = trailState(w["id"] | "gforce");
-    if (!ts || ts->filled == 0) return false;
+    BallState* bs = ballState(w["id"] | "gforce");
+    if (!bs || !bs->seen) return false;
 
     // Цифры внизу меняются каждый кадр, их полоса входит всегда
     R box{r.x, gm.numY - 2, r.w, gm.numPx + 4};
 
     // Шарик рисуется радиусом ballR+1, плюс запас на кайму
     const int pad = gm.ballR + 3;
-    for (uint8_t i = 0; i < ts->filled; ++i) {
-        box = unite(box, R{ts->x[i] - pad, ts->y[i] - pad, pad * 2, pad * 2});
-    }
+    box = unite(box, R{bs->x - pad, bs->y - pad, pad * 2, pad * 2});
+
     box = clipTo(box, r);
     if (box.w <= 0) return false;
 
-    out = unite(box, ts->live);
-    ts->live = box;
+    out = unite(box, bs->live);
+    bs->live = box;
     return true;
 }
 
@@ -1113,29 +1089,20 @@ const Layers& layersOf(JsonArrayConst ws, uint8_t screenIdx) {
     // виджетов: виджеты перекрываются, и сумма площадей легко переваливает за
     // 100%, из-за чего это число сначала было бессмысленным. Отправка идёт
     // полосами во всю ширину, так что строки — это ровно то, за что мы платим.
-    bool rowUsed[LCD_HEIGHT] = {};
-    int dynCount = 0, ovCount = 0;
+    int dynCount = 0, ovCount = 0, hyCount = 0;
     for (int i = 0; i < L.count; ++i) {
-        if (L.overlayMask & (1u << i)) { ++ovCount; continue; }
-        if (!(L.dynamicMask & (1u << i))) continue;
-        ++dynCount;
-        int y0 = rects[i].y - 1;
-        int y1 = rects[i].y + rects[i].h + 1;
-        if (y0 < 0) y0 = 0;
-        if (y1 > LCD_HEIGHT) y1 = LCD_HEIGHT;
-        for (int y = y0; y < y1; ++y) rowUsed[y] = true;
+        if (L.hybridMask  & (1u << i)) ++hyCount;
+        if (L.overlayMask & (1u << i)) ++ovCount;
+        else if (L.dynamicMask & (1u << i)) ++dynCount;
     }
-    int rows = 0;
-    for (int y = 0; y < LCD_HEIGHT; ++y) rows += rowUsed[y] ? 1 : 0;
 
-    int hyCount = 0;
-    for (int i = 0; i < L.count; ++i) hyCount += (L.hybridMask & (1u << i)) ? 1 : 0;
-
+    // Доля строк считается в dirtyBands() и печатается оттуда: у виджетов с
+    // оправой живая область много меньше рамки, и оценка по рамкам врала —
+    // радар G-force давал 95% при реальных единицах процентов.
     Serial.printf("[layers] экран %u: %d виджетов, %d динамических, "
-                  "%d статических, %d оверлеев, %d с оправой, отправка %d%% строк\n",
+                  "%d статических, %d оверлеев, %d с оправой\n",
                   screenIdx, L.count, dynCount,
-                  L.count - dynCount - ovCount, ovCount, hyCount,
-                  rows * 100 / LCD_HEIGHT);
+                  L.count - dynCount - ovCount, ovCount, hyCount);
 
     s_layersScreen = screenIdx;
     return L;
@@ -1191,9 +1158,14 @@ void restoreDynamic(const Frame& f, uint8_t screenIdx) {
         if (!(L.dynamicMask & (1u << i))) continue;
         if (L.overlayMask & (1u << i)) continue;
 
-        JsonObjectConst w = ws[L.order[i]].as<JsonObjectConst>();
+        JsonObjectConst w  = ws[L.order[i]].as<JsonObjectConst>();
+        const char* type   = w["type"] | "";
+
+        // Виджет, закрашивающий себя целиком, в восстановлении не участвует
+        if (isSelfErasing(w, type)) continue;
+
         R r;
-        if (!liveRect(f, w, w["type"] | "", r)) r = rectOf(f, w);
+        if (!liveRect(f, w, type, r)) r = rectOf(f, w);
         if (r.w <= 0 || r.h <= 0) continue;
 
         // Запас в пиксель по каждой стороне: скруглённые рамки и толстые
@@ -1250,6 +1222,20 @@ int dirtyBands(const Frame& f, uint8_t screenIdx, Band* out, int max) {
             if (raw[i].y1 > out[m].y1) out[m].y1 = raw[i].y1;
         }
     }
+
+    // Настоящая доля отправляемых строк, раз в секунду. Оценка по рамкам
+    // виджетов, которая печаталась раньше в [layers], для виджетов с оправой
+    // завышала её в разы: у радара рамка 92% экрана, а живая область — шарик.
+    static uint32_t lastLogMs = 0;
+    const uint32_t nowMs = millis();
+    if (nowMs - lastLogMs >= 1000) {
+        lastLogMs = nowMs;
+        int rows = 0;
+        for (int i = 0; i <= m; ++i) rows += out[i].y1 - out[i].y0;
+        Serial.printf("[bands] экран %u: %d полос, отправка %d%% строк\n",
+                      screenIdx, m + 1, rows * 100 / LCD_HEIGHT);
+    }
+
     return m + 1;
 }
 

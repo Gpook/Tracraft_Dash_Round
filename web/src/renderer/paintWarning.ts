@@ -4,19 +4,24 @@
  * Поведение:
  *  • Без настроенного условия → всегда скрыт
  *  • При первом срабатывании показывается на 2 секунды (auto-hide)
- *  • Без моргания — только мягкое пульсирование масштаба (≤6%)
- *  • Затемнение 30% + круг с градиентом + иконка + label + значение
+ *  • Плоская заливка экрана цветом аварии на 70% + подпись и значение
+ *
+ * Раньше здесь были затемнение фона, радиальный градиент, векторная иконка и
+ * пульсация масштаба. На устройстве это стоило двух полноэкранных проходов по
+ * PSRAM и 130 концентрических окружностей на кадр — рендер проваливался до
+ * 90-110 мс, то есть 8 FPS, ровно в момент аварии. Плоская заливка делает то
+ * же самое одним проходом.
  *
  * ВАЖНО про геометрию: rect умышленно НЕ используется для отрисовки.
  * Предупреждение о падении давления масла должно читаться мгновенно и не
  * может зависеть от того, в какой угол его положили в редакторе. Поэтому
- * оверлей всегда занимает весь экран, а круг центрируется по дисплею —
- * ровно так же, как paintWarning() в src/widget_render.cpp. Рамка остаётся
- * только для выбора и перетаскивания виджета в редакторе.
+ * оверлей всегда занимает весь экран — ровно так же, как paintWarning() в
+ * src/widget_render.cpp. Рамка остаётся только для выбора и перетаскивания
+ * виджета в редакторе.
  */
 
 import { WarningWidget } from '@/schema/layout'
-import { drawWarnTriangle, fontOf } from './deviceFont'
+import { fontOf } from './deviceFont'
 import type { SignalMap } from './paintWidget'
 
 // Хранит "показывать до" (в секундах t) для каждого виджета по id
@@ -82,61 +87,39 @@ export function paintWarning(
 
   const cx = display.w / 2
   const cy = display.h / 2
-  const R  = Math.min(display.w, display.h) * 0.28
-
-  // Мягкое пульсирование масштаба (без on/off моргания)
-  const pulseScale = 1 + 0.06 * ((Math.sin(time * Math.PI * 4) + 1) / 2)
 
   ctx.save()
 
-  // ── 1. Затемнение фона 30% на весь экран ──────────────────────────────────
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.30)'
+  // ── Заливка всего экрана цветом аварии на 70% ─────────────────────────────
+  ctx.globalAlpha = 0.70
+  ctx.fillStyle = color
   ctx.fillRect(0, 0, display.w, display.h)
+  ctx.globalAlpha = 1
 
-  // ── 2. Красный круг ───────────────────────────────────────────────────────
-  ctx.save()
-  ctx.translate(cx, cy)
-  ctx.scale(pulseScale, pulseScale)
+  // ── Подпись и значение по центру ──────────────────────────────────────────
+  // Кегли — доли ширины панели, чтобы текст читался с водительского места
+  // без настройки. Те же коэффициенты, что в прошивке.
+  const labelPx = display.w * 0.13
+  const valuePx = display.w * 0.10
 
-  ctx.shadowColor = color
-  ctx.shadowBlur = 22
-
-  const grad = ctx.createRadialGradient(0, 0, R * 0.1, 0, 0, R)
-  grad.addColorStop(0, `${color}CC`)
-  grad.addColorStop(0.7, `${color}99`)
-  grad.addColorStop(1, `${color}33`)
-  ctx.fillStyle = grad
-  ctx.beginPath()
-  ctx.arc(0, 0, R, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.shadowBlur = 0
-  ctx.restore()
-
-  // ── 3. Иконка ─────────────────────────────────────────────────────────────
-  // Вектор, а не emoji: во встроенных шрифтах прошивки emoji отсутствует,
-  // и раньше именно из-за него знак аварии на устройстве выглядел иначе.
-  const iconY = label ? cy - R * 0.22 : cy - R * 0.05
-  drawWarnTriangle(ctx, cx, iconY, R * 0.62, '#FFFFFF')
-
-  // ── 4. Label ──────────────────────────────────────────────────────────────
-  if (label) {
-    ctx.font = fontOf(Math.max(8, R * 0.28), { bold: true })
-    ctx.fillStyle = '#FFFFFF'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'top'
-    ctx.fillText(label.toUpperCase(), cx, cy + R * 0.20)
-  }
-
-  // ── 5. Числовое значение сигнала ─────────────────────────────────────────
-  ctx.font = fontOf(Math.max(7, R * 0.22), { mono: true })
-  ctx.fillStyle = 'rgba(255,255,255,0.85)'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'top'
-  const valY = cy + R * (label ? 0.50 : 0.32)
   const valText = isNaN(shown)
     ? '–'
     : shown.toFixed(unit === 'bar' ? 2 : shown > 100 ? 0 : 1) + (unit ? ` ${unit}` : '')
-  ctx.fillText(valText, cx, valY)
+
+  ctx.fillStyle = '#FFFFFF'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'top'
+
+  if (label) {
+    ctx.font = fontOf(labelPx, { bold: true })
+    ctx.fillText(label.toUpperCase(), cx, cy - labelPx)
+
+    ctx.font = fontOf(valuePx, { mono: true })
+    ctx.fillText(valText, cx, cy + labelPx / 5)
+  } else {
+    ctx.font = fontOf(valuePx, { mono: true })
+    ctx.fillText(valText, cx, cy - valuePx / 2)
+  }
 
   ctx.restore()
 }

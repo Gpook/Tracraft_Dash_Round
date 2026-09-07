@@ -361,7 +361,6 @@ function GForceFields({ register }: { register: any }) {
       <div className="props-section-title">G-Force</div>
       <label>Range (G)<input type="number" step="0.5" min={0.5} max={5} {...register('props.range', { valueAsNumber: true })} /></label>
       <label>Rings<input type="number" min={1} max={5} {...register('props.rings', { valueAsNumber: true })} /></label>
-      <label className="checkbox-row"><input type="checkbox" {...register('props.trail')} /> Show trail</label>
       <label>Signal X (lateral)
         <select {...register('props.signalX')}>
           {SIGNALS.map(s => <option key={s} value={s}>{s}</option>)}
