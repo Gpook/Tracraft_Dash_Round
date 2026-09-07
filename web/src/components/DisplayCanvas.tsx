@@ -238,11 +238,11 @@ export function DisplayCanvas({ display, zoom = 0.82, showBurnInOrbit = false }:
       ref={canvasRef}
       width={W} height={H}
       style={{
-        // Скругления нет намеренно: прошивка рисует весь квадрат 466x466 и
-        // ничего не обрезает. Круглая маска здесь скрывала бы то, что на
-        // устройстве видно, то есть врала о результате.
         width: W * zoom, height: H * zoom,
         userSelect: 'none',
+        // CO5300 AMOLED — физически круглый дисплей 466×466.
+        // clip-path обрезает углы по форме стекла, как на устройстве.
+        clipPath: display.shape === 'round' ? 'circle(50%)' : undefined,
         boxShadow: '0 0 0 1px rgba(255,255,255,0.06), 0 8px 48px rgba(0,0,0,0.8)',
       }}
       onMouseDown={onMouseDown}

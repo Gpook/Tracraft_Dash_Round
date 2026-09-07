@@ -577,7 +577,7 @@ void paintTireTemp(const Frame& f, JsonObjectConst w, const R& r) {
 constexpr float kArcPad   = 2.0f;
 constexpr float kArcStart = -170.0f * PI / 180.0f;
 constexpr float kArcEnd   =  -10.0f * PI / 180.0f;
-/// Цвет неактивной точки (#2C2C2E из редактора), кладётся с alpha 0.10
+/// Цвет неактивной точки (#2C2C2E из редактора), неактивная фаза allLit
 constexpr uint16_t kArcTrack = 0x2965;
 
 /// Длина эллиптической дуги, численно. Тот же метод и то же число шагов, что
@@ -677,9 +677,15 @@ void paintShiftLight(const Frame& f, JsonObjectConst w, const R& r, float rpm) {
                 stages[stageIdx]["color"] | static_cast<const char*>(nullptr), 0xFFFF);
 
             uint16_t fill;
-            if (allLit)          fill = flashOn ? col : blend565(f.bg, col, 0.05f);
-            else if (i < litCount) fill = col;
-            else                 fill = blend565(f.bg, kArcTrack, 0.10f);
+            if (allLit) {
+                // Мигание: яркая фаза — полный цвет,
+                // тёмная фаза — ~22 % цвета (точки видны, не «пропадают»).
+                fill = flashOn ? col : blend565(col, f.bg, 0.78f);
+            } else if (i < litCount) {
+                fill = col;
+            } else {
+                fill = blend565(f.bg, kArcTrack, 0.10f);
+            }
 
             g->fillCircle(dx, dy, ir, fill);
         }

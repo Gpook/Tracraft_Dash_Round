@@ -101,9 +101,6 @@ export function paintShiftLight(
     const fraction = Math.max(0, Math.min(1, (value - vMin) / (vMax - vMin + 1)))
     const litCount = Math.round(fraction * dotCount)
 
-    // Синхронное мигание когда всё зажжено
-    const globalBlink = allLit ? (blinkOn ? 1.0 : 0.05) : 1.0
-
     for (let i = 0; i < dotCount; i++) {
       const t = i / (dotCount - 1)
       const angle = startAngle + t * (endAngle - startAngle)
@@ -117,8 +114,15 @@ export function paintShiftLight(
 
       let alpha: number
       if (allLit) {
-        alpha = globalBlink
-        ctx.shadowColor = dotColor; ctx.shadowBlur = 10
+        // Мигание всех точек разом: яркая фаза — полный цвет + glow,
+        // тёмная фаза — ~22 % цвета (точки видны, но явно погашены).
+        if (blinkOn) {
+          alpha = 1.0
+          ctx.shadowColor = dotColor; ctx.shadowBlur = 10
+        } else {
+          alpha = 0.22
+          ctx.shadowBlur = 0
+        }
       } else if (lit) {
         alpha = 1
         ctx.shadowColor = dotColor; ctx.shadowBlur = 6
